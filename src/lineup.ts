@@ -4,6 +4,8 @@ import {
   agentFromSpec,
   createAgent,
   cursorAgent,
+  cursorModelOf,
+  cursorQuota,
   familyName,
   type AgentId,
 } from "./adapters/cli-agents.ts";
@@ -78,4 +80,18 @@ export function defaultJudge(agents: Agent[]): Agent {
     if (found) return found;
   }
   return agents[0];
+}
+
+/**
+ * A note for any debater that runs through Cursor on a model billed to Cursor's "Other Models"
+ * allowance, which is easy to exhaust (and can then spill into on-demand spend).
+ */
+export function quotaNote(agents: Agent[]): string | null {
+  const other = agents.filter((a) => {
+    const model = cursorModelOf(a);
+    return model && cursorQuota(model) === "Other Models";
+  });
+  if (!other.length) return null;
+  const list = other.map((a) => `${a.name} (${cursorModelOf(a)})`).join(", ");
+  return `${list} ${other.length === 1 ? "uses" : "use"} Cursor's "Other Models" allowance`;
 }

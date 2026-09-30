@@ -67,3 +67,17 @@ test("default judge prefers Claude, then GPT, then Grok", () => {
   assert.equal(defaultJudge([mk("Grok"), mk("GPT")]).name, "GPT");
   assert.equal(defaultJudge([mk("Kimi"), mk("Gemini")]).name, "Kimi");
 });
+
+test("quotaNote flags debaters on Cursor's Other Models allowance", async () => {
+  const { quotaNote } = await import("../src/lineup.ts");
+  const { cursorAgent, cursorGrokAgent, claudeAgent } = await import("../src/adapters/cli-agents.ts");
+  assert.equal(quotaNote([claudeAgent(), cursorGrokAgent()]), null);
+  assert.equal(
+    quotaNote([claudeAgent(), cursorGrokAgent("grok-4.7-medium")]),
+    `Grok (grok-4.7-medium) uses Cursor's "Other Models" allowance`,
+  );
+  assert.equal(
+    quotaNote([cursorAgent("claude-sonnet-5-medium", { name: "Claude (via Cursor)" }), cursorGrokAgent("grok-4.7-xhigh")]),
+    `Claude (via Cursor) (claude-sonnet-5-medium), Grok (grok-4.7-xhigh) use Cursor's "Other Models" allowance`,
+  );
+});

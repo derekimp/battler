@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { homedir } from "node:os";
 import { parseArgs } from "node:util";
-import { AGENT_IDS, agentFromSpec, createAgent } from "./adapters/cli-agents.ts";
+import { AGENT_IDS, agentFromSpec, createAgent, cursorModelOf, cursorQuota } from "./adapters/cli-agents.ts";
 import { CONFIG_PATH, loadConfig, type Config } from "./config.ts";
 import { runBattle } from "./core/battle.ts";
 import { renderReport, renderVerdictMarkdown } from "./core/report.ts";
@@ -16,7 +16,7 @@ import { Progress } from "./ui/progress.ts";
 import { debaterColor, formatDuration, style, termWidth, truncate } from "./ui/term.ts";
 import { renderHtmlReport } from "./ui/html-report.ts";
 import { renderVerdict } from "./ui/verdict-view.ts";
-import { autoLineup, defaultJudge, explicitLineup } from "./lineup.ts";
+import { autoLineup, defaultJudge, explicitLineup, quotaNote } from "./lineup.ts";
 import { defaultSetupDeps, runSetup } from "./setup.ts";
 import { terminalPrompter } from "./ui/prompt.ts";
 
@@ -109,13 +109,19 @@ async function main() {
     for (const a of agents) {
       const problem = status.get(a.id);
       const name = err.fg(debaterColor(a.name), err.bold(a.name.padEnd(7)));
-      log(`  ${problem ? err.red("✗") : err.green("✓")} ${name} ${problem ? problem : err.dim("ready")}`);
+      const model = cursorModelOf(a);
+      const quota = model && cursorQuota(model);
+      const detail = model ? err.dim(` · ${model}, Cursor's ${quota} allowance`) : "";
+      log(`  ${problem ? err.red("✗") : err.green("✓")} ${name} ${problem ? problem : err.dim("ready") + detail}`);
+      if (!problem && quota === "Other Models") {
+        log(err.yellow(`            This model uses Cursor's "Other Models" allowance. Cursor's own Grok (cursor-grok-*) uses the separate "Cursor Models" one.`));
+      }
     }
     const ready = [...status.values()].filter((e) => !e).length;
     const cursorReady = !status.get("grok");
     log(err.dim(`\n  ${ready} of ${agents.length} ready. A battle needs at least 2.`));
     if (cursorReady && ready < agents.length) {
-      log(err.dim("  Cursor will stand in for the missing Claude/GPT CLIs, using its own Claude and GPT models."));
+      log(err.dim(`  Cursor will stand in for the missing Claude/GPT CLIs, using its Claude and GPT models (Cursor's "Other Models" allowance).`));
     }
     log();
     process.exit(ready >= 2 || cursorReady ? 0 : 1);
@@ -186,7 +192,15 @@ async function main() {
     if (new Set(agents.map((a) => a.id)).size !== agents.length) fail("each debater can only appear once");
     if (agents.length < 2) fail("need at least 2 debaters");
     if (agents.length > 6) fail("at most 6 debaters");
-    plan = { topic, agents, judges: pickJudges(agents, length, values.judge ?? config.judge, config), rounds, length, notes: skipped };
+    const note = quotaNote(agents);
+    plan = {
+      topic,
+      agents,
+      judges: pickJudges(agents, length, values.judge ?? config.judge, config),
+      rounds,
+      length,
+      notes: note ? [...skipped, note] : skipped,
+    };
     chat = interactive && !values.json;
   }
 

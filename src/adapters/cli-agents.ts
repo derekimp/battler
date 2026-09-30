@@ -92,7 +92,7 @@ export function explain(cmd: string, raw: string): string {
     .join("\n");
   let hint = "";
   if (/cannot use this model|unrecognized_model|issue with the selected model|model.{0,40}(not found|does not exist|not supported|invalid)/i.test(raw)) {
-    const grok = raw.match(/Available models:(.*)/)?.[1]?.split(",").map((m) => m.trim()).filter((m) => /^grok-/.test(m));
+    const grok = raw.match(/Available models:(.*)/)?.[1]?.split(",").map((m) => m.trim()).filter((m) => /grok/.test(m));
     hint = `the configured model isn't available to your ${cmd} login. Pick another with --agents or the "models" setting in the config file`;
     // cursor-agent's raw message lists every model it has; the Grok subset is all that's useful.
     if (grok?.length) return `${hint}. Grok models your Cursor account offers: ${grok.join(", ")}`;
@@ -234,7 +234,22 @@ export function codexAgent(model?: string): Agent {
   };
 }
 
-export const DEFAULT_GROK_MODEL = "grok-4.7-medium";
+/**
+ * Cursor's own Grok. Cursor Pro bills "Cursor Models" (cursor-grok-*, composer-*) separately from
+ * "Other Models" (every other model, including the plain grok-4.7-* ones), and the Cursor Models
+ * allowance is the one users rarely exhaust, so it's the default.
+ */
+export const DEFAULT_GROK_MODEL = "cursor-grok-4.6-high";
+
+/** Which Cursor Pro allowance a model draws on. */
+export function cursorQuota(model: string): "Cursor Models" | "Other Models" {
+  return /^(cursor-|composer)/i.test(model) ? "Cursor Models" : "Other Models";
+}
+
+/** The Cursor model behind an agent, if it runs through Cursor. */
+export function cursorModelOf(agent: Agent): string | undefined {
+  return agent.spec?.startsWith("cursor:") ? agent.spec.slice("cursor:".length) : undefined;
+}
 
 /** Models used when Cursor stands in for a missing Claude Code or Codex CLI. */
 export const CURSOR_STAND_INS: Record<"claude" | "codex", string> = {

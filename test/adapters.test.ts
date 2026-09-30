@@ -36,7 +36,7 @@ const calls = () =>
 test("each adapter returns the CLI's answer", async () => {
   assert.equal(await claudeAgent().ask("hi"), "## Position\nclaude[default] opening position.\n## Confidence\n70%");
   assert.match(await codexAgent("gpt-5.5").ask("hi"), /codex\[gpt-5\.5\] opening/);
-  assert.match(await cursorGrokAgent().ask("hi"), /cursor\[grok-4\.7-medium\] opening/);
+  assert.match(await cursorGrokAgent().ask("hi"), /cursor\[cursor-grok-4\.6-high\] opening/);
 });
 
 test("API keys never reach the CLIs", async () => {
@@ -147,4 +147,15 @@ test("Codex falls back through its own model list when the default isn't allowed
     return true;
   });
   resetCodexFallback();
+});
+
+test("which Cursor allowance a model uses", async () => {
+  const { cursorQuota, cursorModelOf, DEFAULT_GROK_MODEL } = await import("../src/adapters/cli-agents.ts");
+  assert.equal(cursorQuota("cursor-grok-4.6-high"), "Cursor Models");
+  assert.equal(cursorQuota("composer-2.5"), "Cursor Models");
+  assert.equal(cursorQuota("grok-4.7-medium"), "Other Models");
+  assert.equal(cursorQuota("claude-sonnet-5-medium"), "Other Models");
+  assert.equal(cursorQuota(DEFAULT_GROK_MODEL), "Cursor Models", "the default Grok uses the roomy allowance");
+  assert.equal(cursorModelOf(cursorGrokAgent()), DEFAULT_GROK_MODEL);
+  assert.equal(cursorModelOf(claudeAgent()), undefined);
 });

@@ -5,6 +5,7 @@
 First public version.
 
 - Debates between Claude (Claude Code), GPT (Codex CLI) and Grok (Cursor CLI), using subscription logins only; API keys are stripped from the environment.
+- Grok defaults to Cursor's own `cursor-grok-4.6-high`, which uses Cursor Pro's roomy "Cursor Models" allowance. `--doctor` and battles flag any debater on the "Other Models" allowance.
 - Cursor can stand in for a missing Claude Code or Codex, or run any model it offers (`cursor:<model>`).
 - Blind judging with shuffled "Debater A/B/C" labels.
 - Judge panel: every debater judges on a fixed checklist (accuracy, reasoning, engagement, calibration); scores are averaged and nobody scores itself.

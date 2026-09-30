@@ -98,7 +98,8 @@ With no `--agents` flag, battler checks what's installed and logged in (`battler
 | Any one of Claude Code / Codex, plus Cursor | Cursor stands in for the missing one, e.g. Claude, GPT (via Cursor), Grok |
 | Only Cursor | Claude (via Cursor), GPT (via Cursor), Grok |
 
-Cursor can run models from several companies, so it can fill any gap. You can also choose exactly who debates:
+Cursor can run models from several companies, so it can fill any gap (see [Cursor allowances](#cursor-allowances)
+below: stand-ins draw on Cursor's "Other Models" allowance). You can also choose exactly who debates:
 
 ```bash
 battler -a claude,codex "…"                                   # just Claude vs GPT
@@ -139,7 +140,7 @@ battler -L "Should we rewrite the monolith?"          # long: detailed verdict w
 battler -r 3 "Should we rewrite the monolith?"        # more debate rounds
 battler --open "Should we rewrite the monolith?"      # open the report in your browser afterwards
 battler -a claude,grok -j codex "Tabs or spaces?"     # choose debaters and a single judge
-battler -a claude:opus,codex,grok:grok-4.7-high "…"   # pick a model per debater
+battler -a claude:opus,codex,grok:cursor-grok-4.6-xhigh "…"   # pick a model per debater
 pbpaste | battler                                      # topic from stdin
 ```
 
@@ -201,7 +202,7 @@ Set defaults in `~/.config/battler/config.json` (or `$XDG_CONFIG_HOME/battler/co
   "rounds": 2,
   "length": "medium",
   "out": "~/battles",
-  "models": { "claude": "opus", "grok": "grok-4.7-high" }
+  "models": { "claude": "opus", "grok": "cursor-grok-4.6-xhigh" }
 }
 ```
 
@@ -252,6 +253,21 @@ If a debater errors or hits a usage limit, it is dropped and the battle continue
 - **Subscriptions only.** `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `CURSOR_API_KEY` and similar variables are removed before each CLI starts, so an exported key is never billed.
 - **Usage.** A default medium battle with three debaters makes 9 calls (3 opening + 3 debate + 3 judges);
   a short one makes 7 (one judge). Each counts against that service's normal subscription limits, the same as if you'd typed the prompts yourself. Each extra round adds one call per debater.
+
+### Cursor allowances
+
+Cursor Pro splits its included usage in two, and battler's defaults are chosen around that:
+
+| Allowance | Models | battler uses it for |
+|---|---|---|
+| **Cursor Models** | Cursor's own models: `cursor-grok-*`, `composer-*` | Grok, by default (`cursor-grok-4.6-high`) |
+| **Other Models** | everything else, including `grok-4.7-*`, and Claude, GPT and Gemini models | only if you pick such a model, or when Cursor stands in for a missing Claude Code or Codex |
+
+Once an allowance runs out, Cursor bills extra usage as on-demand spend if you've enabled it. `battler --doctor`
+shows which allowance each Cursor-backed debater uses, and a battle prints a warning before it draws on
+"Other Models". If you'd rather have xAI's newer Grok 4.7 and don't mind the Other Models allowance, use
+`-a grok:grok-4.7-medium` or set `"models": { "grok": "grok-4.7-medium" }`. Consider setting an on-demand
+spend limit in Cursor's settings either way.
 - **Sandboxed.** The CLIs are coding agents, so battler runs them without tools (Claude), read-only (Codex) or in ask mode (Cursor), inside an empty temporary folder. They never see your files.
 - **Terms.** battler only invokes each vendor's official CLI in its documented non-interactive mode. You are responsible for using your accounts within Anthropic's, OpenAI's and Cursor's terms, and heavy automated use may hit their rate limits.
 

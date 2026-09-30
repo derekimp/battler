@@ -73,7 +73,7 @@ test("explicit agents and judge, with models", () => {
   const log = join(mkdtempSync(join(tmpdir(), "log-")), "calls.jsonl");
   const r = battler(["--json", "-s", "-a", "codex:gpt-5.5,grok:grok-4.7-low", "-j", "grok", "Q?"], { FAKE_LOG: log });
   assert.equal(r.status, 0, r.stderr);
-  assert.match(JSON.parse(r.stdout).verdict.answer, /by cursor\[grok-4\.7-medium\]/, "judge uses its own default model");
+  assert.match(JSON.parse(r.stdout).verdict.answer, /by cursor\[cursor-grok-4\.6-high\]/, "judge uses its own default model");
   const clis = readFileSync(log, "utf8").trim().split("\n").map((l) => JSON.parse(l).cli);
   assert.ok(!clis.includes("claude"), "claude was not used");
 });
@@ -205,7 +205,7 @@ test("continue: more rounds on the last battle, then a follow-up question with i
   const opening = cursorPrompts.find((p) => p.includes("What about YAML files?") && p.includes("OPENING round"))!;
   assert.match(opening, /BACKGROUND: this is a follow-up to an earlier debate you took part in, as Debater [ABC]/);
   assert.match(opening, /Earlier question:\nTabs or spaces\?/);
-  assert.match(opening, /<your_earlier_position>\n## Revised position\ncursor\[grok-4\.7-medium\] revised position/);
+  assert.match(opening, /<your_earlier_position>\n## Revised position\ncursor\[cursor-grok-4\.6-high\] revised position/);
   assert.match(opening, /<earlier_positions>\n### Debater/);
   assert.match(readFileSync(fo.transcript, "utf8"), /^# What about YAML files\?\n\n\*Follow-up to: Tabs or spaces\?\*/);
 
@@ -218,4 +218,17 @@ test("continue with nothing to continue explains what to do", () => {
   const r = battler(["continue", "-o", "nowhere", "Q?"]);
   assert.equal(r.status, 1);
   assert.match(r.stderr, /no earlier battle found in nowhere\. Run a battle first, or pass --from <report>/);
+});
+
+test("doctor and battles say which Cursor allowance Grok uses", () => {
+  const doc = battler(["--doctor"]);
+  assert.match(doc.stderr, /✓ Grok +ready · cursor-grok-4\.6-high, Cursor's Cursor Models allowance/);
+  assert.doesNotMatch(doc.stderr, /"Other Models"/);
+  const dir = mkdtempSync(join(tmpdir(), "cfg-"));
+  mkdirSync(join(dir, "battler"));
+  writeFileSync(join(dir, "battler", "config.json"), JSON.stringify({ models: { grok: "grok-4.7-xhigh" } }));
+  const warned = battler(["--doctor"], { XDG_CONFIG_HOME: dir });
+  assert.match(warned.stderr, /grok-4\.7-xhigh, Cursor's Other Models allowance\n.*uses Cursor's "Other Models" allowance/);
+  const battle = battler(["--json", "-s", "Q?"], { XDG_CONFIG_HOME: dir });
+  assert.match(battle.stderr, /! Grok \(grok-4\.7-xhigh\) uses Cursor's "Other Models" allowance/);
 });
