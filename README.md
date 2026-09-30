@@ -1,141 +1,75 @@
 # battler
 
+[![CI](https://github.com/derekimp/battler/actions/workflows/ci.yml/badge.svg)](https://github.com/derekimp/battler/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/battler)](https://www.npmjs.com/package/battler)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 **Make your AI subscriptions debate each other, then get one consolidated answer.**
 
-Claude, ChatGPT and Grok each answer your question, read each other's answers, argue, and revise.
-Then they judge each other blind: every AI scores the others against the same checklist, and battler
-averages the scores into one verdict with the best-supported answer, where they agree, where they still
-disagree, and who argued best.
+Claude, ChatGPT and Grok (and Gemini, if you have it) each answer your question, read each other's
+answers, argue, and revise. Then they judge each other blind: every AI scores the others against the
+same checklist, and battler turns that into one verdict: the best-supported answer, where they agree,
+where they still disagree, and who argued best.
 
-No API keys and no per-token bills. battler drives the official command-line tools you're already
-signed in to, so every call uses the subscriptions you already pay for.
+No API keys and no per-token bills. battler drives the official tools you're already signed in to, so
+every call uses the subscriptions you already pay for.
 
 ![The battler web app: Claude, GPT and Grok debate "Is it still worth learning to code in 2026?", then judge each other and show a verdict and scorecard](docs/demo-web.gif)
 
-<sub>A real battle in the web app (`battler serve`), with the waiting sped up. [MP4 version](docs/demo-web.mp4).</sub>
+<sub>A real battle in the web app, with the waiting sped up. [MP4 version](docs/demo-web.mp4).</sub>
 
-And in the terminal:
+## Why battler
 
-![battler running a short battle in the terminal: "Is a hot dog a sandwich?", Grok wins](docs/demo-terminal.gif)
+- **Uses what you already pay for.** Claude Pro/Max, ChatGPT and Cursor subscriptions, through their own
+  official CLIs. API keys are stripped from the environment so nothing is billed per token.
+- **A real debate, not side-by-side answers.** Each AI answers alone, then reads the others, rebuts, concedes
+  and revises. You can ask follow-ups and add rounds.
+- **Blind, fair judging.** Debaters are "Debater A/B/C" (shuffled every battle), every AI judges, nobody scores
+  itself, and the score comes from a fixed checklist rather than the judge's gut.
+- **Local.** Everything runs on your Mac. Battles are saved as files you own.
 
-<details>
-<summary>What a medium battle prints</summary>
+## Quick start
 
-```
-$ battler "Should startups use microservices from day one?"
-
-  Claude vs GPT vs Grok
-  Should startups use microservices from day one?
-  medium · 2 rounds · judged by a panel: Claude, GPT and Grok
-
-  Round 1/2 · Opening statements
-    ✓ Claude     14s  No. Most startups should begin with a well-structured modular…
-    ✓ GPT        19s  Most startups should not use microservices from day one…
-    ✓ Grok       14s  No. Startups should start with a well-structured modular…
-
-  Round 2/2 · Rebuttals and revisions
-    ✓ Claude     20s  No. Most startups should start with a modular monolith an…
-    ✓ GPT        23s  Most startups should begin with a modular monolith, while…
-    ✓ Grok       51s  No. A typical startup, meaning a small team still learnin…
-
-  Verdict · judge panel
-    ✓ Claude     15s
-    ✓ GPT        30s
-    ✓ Grok       41s
-
-  ╭─ Verdict ───────────────────────────────────────────── strong agreement ─╮
-  │                                                                          │
-  │  No. Most startups, meaning small teams still discovering their product, │
-  │  should start with a genuinely modular monolith: one deployment,         │
-  │  enforced module interfaces, and owned schemas. …                        │
-  │                                                                          │
-  ╰──────────────────────────────────────────────────────────────────────────╯
-
-  Agreed
-  ✓ Default to a modular monolith. Microservices from day one is wrong for
-    typical small startups.
-  ✓ Microservices mainly solve multi-team coordination problems that small
-    teams do not yet have.
-
-  Still debated
-  ≠ When to enforce boundaries versus when to extract
-    Claude, GPT  Extract when measured pressure justifies it, having enforced
-                 module boundaries in advance.
-    Grok         Waiting for measurement can be too late. Data gravity makes
-                 the first extraction costly.
-
-  Scorecard
-  GPT     ████████▌░  8.5   Modular monolith with a few justified day-one services.
-  Grok    ████████░░  8.3   Modular monolith. Split only for nameable boundaries.
-  Claude  ████████░░  8.0   Modular monolith first. Extract under measured pressure.
-
-  Scored by Claude, GPT and Grok; no judge scored itself.
-
-  ★ GPT wins  top score · first choice of 2 of 3 judges
-    GPT and Grok each contributed the sharpest refinements…
-
-  Report: battles/2026-09-29-should-startups-use-microservices.html
+```bash
+npm install -g battler
+battler setup      # checks your AI CLIs, helps install and sign in, runs a test battle
+battler serve      # opens the web app
 ```
 
-</details>
+Or stay in the terminal:
 
-In a real terminal each debater has its own color, and progress updates live with spinners and timers.
+```bash
+battler "Is it still worth learning to code in 2026?"
+```
+
+![battler in the terminal: "Is a hot dog a sandwich?", Grok wins](docs/demo-terminal.gif)
 
 ## Requirements
 
 - **macOS** (Linux will probably work but isn't tested yet; Windows isn't supported)
-- Node.js 22 or newer
-- At least **two** of these CLIs, each signed in with a subscription, **or just Cursor** (see below):
+- **Node.js 22** or newer
+- At least **two** of these, each signed in with a subscription, **or just Cursor**:
 
-| Debater | CLI | Install | Sign in with |
+| Debater | Tool | Install | Sign in with |
 |---|---|---|---|
 | Claude | Claude Code (`claude`) | [claude.com/claude-code](https://claude.com/claude-code) | Claude Pro or Max: run `claude` and log in |
 | GPT | Codex CLI (`codex`) | `npm install -g @openai/codex` | ChatGPT: `codex login` |
 | Grok | Cursor CLI (`cursor-agent`) | `curl https://cursor.com/install -fsS \| bash` | Cursor: `cursor-agent login` |
-| Gemini (optional) | Gemini CLI (`gemini`) | `npm install -g @google/gemini-cli` | Google account: run `gemini`, choose Login with Google |
+| Gemini *(optional)* | Gemini CLI (`gemini`) | `npm install -g @google/gemini-cli` | Google account: run `gemini`, choose Login with Google |
 
-### Which debaters you get
+`battler setup` does all of this with you, asking before each install or sign-in. `battler --doctor` shows
+what's ready at any time.
 
-With no `--agents` flag, battler checks what's installed and logged in (`battler --doctor` shows the same):
+### Who debates
+
+With no `--agents` flag, battler uses whatever is ready:
 
 | You have | Debaters |
 |---|---|
-| Claude Code, Codex and Cursor | Claude, GPT, Grok (plus Gemini if its CLI is signed in) |
+| Claude Code, Codex and Cursor | Claude, GPT, Grok (plus Gemini if it's signed in) |
 | Claude Code and Codex | Claude, GPT |
-| Any one of Claude Code / Codex, plus Cursor | Cursor stands in for the missing one, e.g. Claude, GPT (via Cursor), Grok |
+| One of Claude Code / Codex, plus Cursor | Cursor stands in for the missing one, e.g. Claude, GPT (via Cursor), Grok |
 | Only Cursor | Claude (via Cursor), GPT (via Cursor), Grok |
-
-Cursor can run models from several companies, so it can fill any gap (see [Cursor allowances](#cursor-allowances)
-below: stand-ins draw on Cursor's "Other Models" allowance). You can also choose exactly who debates:
-
-```bash
-battler -a claude,codex "…"                                   # just Claude vs GPT
-battler -a claude:opus,codex:gpt-5.5 "…"                      # with specific models
-battler -a cursor:claude-sonnet-5-medium,cursor:gpt-5.5-medium,grok "…"   # all through Cursor
-battler -a claude,cursor:gemini-3.7-flash-high "…"            # anything Cursor offers (`cursor-agent --list-models`)
-```
-
-## Install
-
-```bash
-npm install -g battler
-battler setup
-```
-
-`battler setup` checks which AI CLIs you have, offers to install and log in to the missing ones (asking
-before each step), saves your preferred length, and runs a one-minute test battle.
-
-Or try it without installing: `npx battler "Is a hot dog a sandwich?"`
-
-<details>
-<summary>From source</summary>
-
-```bash
-git clone https://github.com/derekimp/battler.git && cd battler
-npm install          # also builds dist/
-npm link             # puts `battler` on your PATH
-```
-</details>
 
 ## The web app
 
@@ -143,30 +77,27 @@ npm link             # puts `battler` on your PATH
 battler serve
 ```
 
-Opens battler in your browser at `http://localhost:4747`. Everything the terminal does, with a friendlier face:
-type a question (or pick an example), choose debaters and length, and watch each AI's answer arrive live,
-round by round, followed by the verdict and scorecard. Every battle lands in the history sidebar, and a bar at
-the bottom lets you ask a follow-up or add a round.
+Opens `http://localhost:4747`: type a question (or pick an example), choose debaters and length, and watch
+each answer arrive live, round by round, then the verdict and scorecard. Battles land in the history
+sidebar, and a bar at the bottom asks a follow-up or adds a round.
 
-It runs only on your Mac, with the same CLIs and subscriptions as the terminal, and saves battles to the same
-folder (`./battles`, or `"out"` in your config).
+- It runs only on your Mac, with the same CLIs as the terminal, and saves battles to the same folder.
+- **From your phone:** `battler serve --lan` prints a link with a one-time access token for your Wi-Fi.
+  Anyone with that link can start battles on your subscriptions, so keep it private.
+- `--port 5000` picks another port; `--no-open` doesn't open the browser.
 
-- **From your phone:** `battler serve --lan` prints a link with a one-time access token that works on the same
-  Wi-Fi. Anyone with that link can start battles on your subscriptions, so keep it private.
-- `--port 5000` picks another port; `--no-open` skips opening the browser.
-
-## Usage
+## The terminal
 
 ```bash
 battler                                               # asks for the topic and length, then offers follow-ups
 battler "Is Rust better than Go for backend services?"
-battler -s "Tabs or spaces?"                          # short: quick answer and winner, ~1 min
-battler -L "Should we rewrite the monolith?"          # long: detailed verdict with strengths and weaknesses
-battler -r 3 "Should we rewrite the monolith?"        # more debate rounds
-battler --open "Should we rewrite the monolith?"      # open the report in your browser afterwards
-battler -a claude,grok -j codex "Tabs or spaces?"     # choose debaters and a single judge
-battler -a claude:opus,codex,grok:cursor-grok-4.6-xhigh "…"   # pick a model per debater
-pbpaste | battler                                      # topic from stdin
+battler -s "Tabs or spaces?"                          # short: a quick answer and a winner, ~1 min
+battler -L "Should we rewrite the monolith?"          # long: an in-depth verdict
+battler -r 3 "…"                                      # more debate rounds
+battler --open "…"                                    # open the report in your browser afterwards
+battler -a claude,grok -j codex "…"                   # choose debaters and a single judge
+battler -a claude:opus,codex,grok:cursor-grok-4.6-xhigh "…"   # a model per debater
+pbpaste | battler                                     # topic from stdin
 ```
 
 ### Follow-ups and more rounds
@@ -174,77 +105,90 @@ pbpaste | battler                                      # topic from stdin
 Every battle is saved, so you can keep it going:
 
 ```bash
-battler continue "What if they mainly want to build websites?"   # follow-up question
+battler continue "What if they mainly want to build websites?"   # a follow-up question
 battler continue                                                   # one more round, same topic
 battler continue -r 2                                              # two more rounds
-battler continue --from battles/2026-09-30-…-tabs-or-spaces.html "…"   # a specific battle, not the latest
+battler continue --from battles/…-tabs-or-spaces.html "…"          # a specific battle, not the latest
 ```
 
 - **A follow-up** is a new debate on your new question. Each AI first sees the earlier question, the judges'
-  answer, its own final position and everyone else's, then argues the follow-up. Same debaters, same
-  "Debater A/B/C" letters.
-- **More rounds** continue the same debate from where it stopped: everyone rebuts the latest positions, then
-  the judges score the whole debate again.
-- Running plain `battler` in a terminal asks after each verdict: type a follow-up, `more` for another
-  round, or press Enter to finish.
+  answer, its own final position and everyone else's. Same debaters, same "Debater A/B/C" letters.
+- **More rounds** pick up where the debate stopped; the judges then score the whole debate again.
 
-In a terminal the verdict is drawn as shown above. When stdout is piped, it's written as Markdown
-(`battler "…" > answer.md`), and `--json` gives structured output for scripts.
-Every battle also saves a report to `./battles/`: a web page (`.html`) with the verdict, scorecard and each
-round side by side, the same as Markdown (`.md`), and the battle itself (`.json`) for `battler continue`. `--open` opens the web page when the battle finishes.
+### Output
+
+The verdict is drawn in the terminal; piped, it's Markdown (`battler "…" > answer.md`), and `--json` gives
+structured output for scripts. Each battle also saves to `./battles/` a web report (`.html`), the same as
+Markdown (`.md`), and the battle itself (`.json`, used by `battler continue`).
+
+### Options
 
 | Option | Default | |
 |---|---|---|
-| `-a, --agents` | every ready CLI | Debaters, comma-separated `name[:model]`. Names: `claude`, `codex` (or `gpt`), `grok`, or `cursor:<model>` |
-| `-j, --judge` | `panel` (short: Claude) | `panel`: every debater judges. Or one agent, same format as `--agents` |
-| `-l, --length` | medium | `short`, `medium` or `long` (shorthands `-s`, `-m`, `-L`). See below |
-| `-r, --rounds` | 2 | Total rounds including the opening, 1-5 |
-| `-o, --out` | `./battles` | Where reports are saved |
-| `--open` | | Open the web report in your browser afterwards |
-| `--from` | the latest battle | With `continue`: which battle to continue (its `.html`, `.md` or `.json`) |
+| `-a, --agents` | every ready CLI | Debaters, comma-separated `name[:model]`: `claude`, `codex` (or `gpt`), `grok`, `gemini`, or `cursor:<model>` for any model Cursor offers |
+| `-j, --judge` | `panel` (short: one judge) | `panel`: every debater judges. Or one agent, same format as `--agents` |
+| `-l, --length` | `medium` | `short`, `medium` or `long` (shorthands `-s`, `-m`, `-L`) |
+| `-r, --rounds` | 2 | Rounds including the opening, 1-5 |
+| `-o, --out` | `./battles` | Where battles are saved |
+| `--open` | | Open the web report afterwards |
+| `--from` | the latest battle | With `continue`: which battle (its `.html`, `.md` or `.json`) |
 | `--json` | | Print the verdict as JSON |
 | `--doctor` | | Check each CLI is installed and on a subscription login |
 
-### Lengths
-
-| | Debaters write (opening / rebuttal) | Verdict shows |
+| Length | Debaters write (opening / rebuttal) | Verdict shows |
 |---|---|---|
-| `short` | ~150 / 200 words | a 1-2 sentence answer, the winner, and scores |
-| `medium` | ~350 / 450 words | an answer paragraph, what they agreed on, what's still debated, a scorecard, the winner |
-| `long` | ~700 / 900 words | all of the above in more depth, plus each debater's strongest and weakest point |
-
-Shorter battles are also faster. The saved transcript always has every round in full.
+| `short` | ~150 / 200 words | a 1-2 sentence answer, the winner and scores |
+| `medium` | ~350 / 450 words | an answer, what they agree on, what's still debated, a scorecard, the winner |
+| `long` | ~700 / 900 words | all of that in more depth, plus each debater's strongest and weakest point |
 
 ### Config file
 
-Set defaults in `~/.config/battler/config.json` (or `$XDG_CONFIG_HOME/battler/config.json`). Every field is optional, and flags override it.
+Defaults live in `~/.config/battler/config.json`. Every field is optional; flags override them.
 
 ```json
 {
   "agents": ["claude", "codex", "grok"],
   "judge": "panel",
-  "open": true,
   "rounds": 2,
   "length": "medium",
+  "open": true,
   "out": "~/battles",
   "models": { "claude": "opus", "grok": "cursor-grok-4.6-xhigh" }
 }
 ```
 
-Model names are passed straight to each CLI. If one isn't available to your account, battler says so,
-and for Grok it lists the models your Cursor plan offers.
+Model names go straight to each CLI. If one isn't available to your account, battler says so (for Grok it
+lists the models your Cursor plan offers).
+
+## The Chrome extension (beta)
+
+Prefer the chat websites to CLIs? The extension runs battles in your own browser tabs: it opens ChatGPT and
+Claude in temporary/incognito chats and Grok through [cursor.com/agents](https://cursor.com/agents), types each
+prompt, waits for the reply and reads it back, all from a side panel with the same verdict, history and
+follow-ups. A **copy & paste** mode does the same with you carrying the messages, for when a site changes.
+
+It isn't in the Chrome Web Store yet. To try it:
+
+```bash
+git clone https://github.com/derekimp/battler.git && cd battler && npm install
+npm run build:extension
+```
+
+Then open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and pick `dist/extension`.
+Sign in to chatgpt.com, claude.ai and cursor.com, and click the battler icon.
+
+> Automating a chat website is a grey area in most providers' terms of service. The extension only acts when
+> you start a battle, in visible tabs, one message at a time; copy & paste mode avoids automation entirely.
 
 ## How a battle works
 
-1. **Opening:** every debater answers the topic on its own, in parallel.
-2. **Debate** (rounds 2+): each debater sees the others' latest positions, rebuts the weakest points, concedes what it should, and revises its own position.
-3. **Verdict:** the judges return structured JSON: the answer, points of consensus, open disagreements, and a
-   1-5 rating for each debater on a fixed checklist. battler renders it for the terminal, the web report,
-   Markdown or `--json`.
+1. **Opening:** every debater answers on its own, in parallel.
+2. **Debate** (round 2 on): each sees the others' latest positions, rebuts the weakest points, concedes what it
+   should, and revises its own position.
+3. **Verdict:** the judges return the answer, the points of consensus, the open disagreements, and a 1-5 rating
+   for each debater on a fixed checklist.
 
-### How scoring works
-
-Each judge rates every debater from 1 to 5 on four criteria:
+### Scoring
 
 | Criterion | What it measures |
 |---|---|
@@ -253,31 +197,28 @@ Each judge rates every debater from 1 to 5 on four criteria:
 | Engagement | Deals with the other debaters' strongest points; concedes and pushes back well |
 | Calibration | Stated confidence matches the evidence and the caveats |
 
-The score out of 10 is computed by battler, not chosen by the judge: the four ratings added up and halved.
-
-- **Panel** (default for medium and long): every debater also judges. With three or more debaters, a
-  judge's ratings of itself are thrown away, so nobody marks their own homework. Ratings are averaged
-  across judges.
-- **The winner is the top of the scorecard**, the highest average score. The report also shows how many
-  judges had that debater as their first choice. If the top scores tie, those first choices break the
-  tie; if they're split too, it's a tie.
-- **Single judge** (default for short, or `-j claude` etc.): one model rates everyone, which is cheaper
-  and faster but more open to that model's tastes.
-
-**The judge is blind.** Debaters appear to each other and to the judge only as "Debater A/B/C". The letters
-are shuffled every battle, so "Debater A" isn't always the same model, and debaters are told never to say which
-model or company they are. Real names are put back only in what you read.
-
-Judges are still models with their own tastes, and may prefer arguments that reason the way they do even
-without knowing who's who. The panel and the self-exclusion reduce that; they don't remove it. The answer,
-consensus and disagreements are the most reliable part of a verdict; treat the scores as informed opinion.
-If a debater errors or hits a usage limit, it is dropped and the battle continues as long as two remain.
+- The score out of 10 is computed by battler, not chosen by the judge: the four ratings added up and halved.
+- **Panel** (default for medium and long): every debater judges; with three or more, a judge's ratings of
+  itself are thrown away; ratings are averaged.
+- **The winner is the top of the scorecard.** The judges' first choices break a tie; if they're split too,
+  it's a tie.
+- **Blind:** debaters and judges only see "Debater A/B/C", shuffled each battle, and debaters are told never to
+  say which model they are. Judges can still prefer arguments that reason the way they do, so treat scores as
+  informed opinion; the answer, consensus and disagreements are the most reliable part.
+- If a debater errors or hits a usage limit, it drops out and the battle continues as long as two remain.
 
 ## Subscriptions, usage and privacy
 
-- **Subscriptions only.** `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `CURSOR_API_KEY` and similar variables are removed before each CLI starts, so an exported key is never billed.
-- **Usage.** A default medium battle with three debaters makes 9 calls (3 opening + 3 debate + 3 judges);
-  a short one makes 7 (one judge). Each counts against that service's normal subscription limits, the same as if you'd typed the prompts yourself. Each extra round adds one call per debater.
+- **Subscriptions only.** `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `CURSOR_API_KEY`, `GEMINI_API_KEY` and similar
+  variables are removed before each CLI starts, so an exported key is never billed. A Gemini CLI signed in with
+  an API key instead of a Google account is refused.
+- **Usage.** A medium battle with three debaters makes 9 calls (3 opening + 3 rebuttals + 3 judges); a short
+  one makes 7. Each extra round adds one call per debater. They count against your plans' normal limits, the
+  same as typing the prompts yourself.
+- **Sandboxed.** The CLIs are coding agents, so battler runs them with no tools (Claude), read-only (Codex,
+  Gemini) or in ask mode (Cursor), in an empty temporary folder. They never see your files.
+- **Terms.** battler invokes each vendor's official CLI in its documented non-interactive mode. You're
+  responsible for using your accounts within Anthropic's, OpenAI's, Cursor's and Google's terms.
 
 ### Cursor allowances
 
@@ -285,47 +226,51 @@ Cursor Pro splits its included usage in two, and battler's defaults are chosen a
 
 | Allowance | Models | battler uses it for |
 |---|---|---|
-| **Cursor Models** | Cursor's own models: `cursor-grok-*`, `composer-*` | Grok, by default (`cursor-grok-4.6-high`) |
-| **Other Models** | everything else, including `grok-4.7-*`, and Claude, GPT and Gemini models | only if you pick such a model, or when Cursor stands in for a missing Claude Code or Codex |
+| **Cursor Models** | Cursor's own: `cursor-grok-*`, `composer-*` | Grok, by default (`cursor-grok-4.6-high`) |
+| **Other Models** | everything else, including `grok-4.7-*` and Claude, GPT and Gemini models | only if you pick one, or when Cursor stands in for a missing Claude Code or Codex |
 
-Once an allowance runs out, Cursor bills extra usage as on-demand spend if you've enabled it. `battler --doctor`
-shows which allowance each Cursor-backed debater uses, and a battle prints a warning before it draws on
-"Other Models". If you'd rather have xAI's newer Grok 4.7 and don't mind the Other Models allowance, use
-`-a grok:grok-4.7-medium` or set `"models": { "grok": "grok-4.7-medium" }`. Consider setting an on-demand
-spend limit in Cursor's settings either way.
-- **Sandboxed.** The CLIs are coding agents, so battler runs them without tools (Claude), read-only (Codex) or in ask mode (Cursor), inside an empty temporary folder. They never see your files.
-- **Terms.** battler only invokes each vendor's official CLI in its documented non-interactive mode. You are responsible for using your accounts within Anthropic's, OpenAI's and Cursor's terms, and heavy automated use may hit their rate limits.
+`battler --doctor` shows which allowance each Cursor-backed debater uses, and a battle warns before it draws on
+"Other Models". Once an allowance runs out, Cursor bills on-demand spend if you've enabled it, so consider
+setting a spend limit in Cursor's settings.
 
-## Project layout
+## Troubleshooting
 
-```
-src/core/       battle engine, prompts, report (knows nothing about CLIs)
-src/adapters/   Agent implementations. cli-agents.ts drives the three CLIs
-test/           node:test suites; fixtures/ holds the fake CLIs
-src/core/panel.ts  merging several judges' verdicts into one
-src/ui/         terminal rendering (live progress, verdict view) and the web report
-src/lineup.ts   choosing debaters: auto-detection, Cursor stand-ins, the default judge
-src/plan.ts     turning a request into a battle (lineup, judges, continue)
-src/run.ts      running a battle and saving its files
-src/server.ts   `battler serve`: local HTTP server + live progress over Server-Sent Events
-web/            the web app (plain HTML, CSS and JavaScript; no build step)
-src/cli.ts      terminal front end
-src/config.ts   config file loader
-```
+| You see | What to do |
+|---|---|
+| `not found on PATH` | Install that CLI (the message says how), or run `battler setup` |
+| `not logged in` | Sign in to that CLI (`battler --doctor` says how) |
+| `you've hit your … usage limit` | That plan's limit is used up for now; battler continues without that debater |
+| `model isn't available to your … login` | Pick another model with `-a name:model` or `"models"` in the config |
+| A debater is slow | Grok via Cursor is usually the slowest; `-a grok:cursor-grok-4.6-high-fast` is quicker |
+| The Chrome extension's panel is blank | Reload it at `chrome://extensions`; the panel says what failed |
+
+Found a bug? [Open an issue](https://github.com/derekimp/battler/issues) with the output of `battler --doctor`.
 
 ## Development
 
 ```bash
 npm install
-npm run dev -- "topic"   # run the TypeScript sources directly (Node 23.6+)
-npm test                 # unit and end-to-end tests
+npm run dev -- "topic"      # run the TypeScript sources directly (Node 23.6+)
+npm test                    # unit and end-to-end tests (fake CLIs; no real AI calls)
 npm run typecheck
-npm run test:dist        # build, then run the end-to-end tests against dist/
+npm run test:dist           # the same tests against the built dist/
+npm run build:extension     # the Chrome extension, in dist/extension
 ```
 
-The tests never call a real AI: `test/fixtures/bin` has fake `claude`, `codex` and `cursor-agent` programs
-that mimic the real CLIs' flags and output. CI runs everything on macOS, plus a smoke test of the built CLI on
-Node 22 and an install of the packed tarball.
+```
+src/core/       battle engine, prompts, judging panel, reports (knows nothing about CLIs or browsers)
+src/adapters/   debaters backed by the CLIs
+src/plan.ts     turning a request into a battle (lineup, judges, follow-ups)
+src/run.ts      running a battle and saving it
+src/cli.ts      the terminal front end        src/server.ts  `battler serve`
+src/ui/         terminal rendering and the HTML report
+web/            the web app (plain HTML/CSS/JS, no build step)
+extension/      the Chrome extension (side panel + content script)
+test/           node:test suites; test/fixtures has fake claude/codex/cursor-agent/gemini programs
+scripts/demo/   how the demo GIFs were recorded
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
