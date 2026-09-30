@@ -240,6 +240,8 @@ setting a spend limit in Cursor's settings.
 | `you've hit your … usage limit` | That plan's limit is used up for now; battler continues without that debater |
 | `model isn't available to your … login` | Pick another model with `-a name:model` or `"models"` in the config |
 | A debater is slow | Grok via Cursor is usually the slowest; `-a grok:cursor-grok-4.6-high-fast` is quicker |
+| A battle stopped before the verdict | Its rounds are saved: `battler continue` (or "Judge it now" in the web app or extension) judges them |
+| `Can't reach the AI services` | You look offline; check your connection |
 | The Chrome extension's panel is blank | Reload it at `chrome://extensions`; the panel says what failed |
 
 Found a bug? [Open an issue](https://github.com/derekimp/battler/issues) with the output of `battler --doctor`.

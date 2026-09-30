@@ -18,7 +18,7 @@ import { loadSaved, savedToResult, type SavedBattle } from "./core/saved.ts";
 import type { BattleEvent } from "./core/types.ts";
 import { namedVerdict, revealNames, winnerHeadline } from "./core/verdict.ts";
 import { continuePlan, newPlan, PlanError, type Plan } from "./plan.ts";
-import { runPlan } from "./run.ts";
+import { runPlan, type BattleError } from "./run.ts";
 import { htmlColor, REPORT_CSS, renderRoundsHtml, renderTurnHtml, renderVerdictHtml } from "./ui/html-report.ts";
 import { plainPreview } from "./ui/term.ts";
 
@@ -88,7 +88,8 @@ function summary(id: string, saved: SavedBattle) {
     followUpOf: saved.followUpOf ?? null,
     debaters: saved.agents.map((a) => ({ name: a.name, color: htmlColor(a.name) })),
     winner: v ? (v.winner.debater === "Tie" ? null : v.winner.debater) : null,
-    headline: v ? winnerHeadline(v) : null,
+    headline: saved.incomplete ? "interrupted" : v ? winnerHeadline(v) : null,
+    incomplete: Boolean(saved.incomplete),
   };
 }
 
@@ -106,7 +107,7 @@ function detail(id: string, saved: SavedBattle) {
 
 const ID = /^[\w\p{L}\p{N}.-]+$/u;
 
-export function startServer(opts: ServeOptions): Server {
+export function startServer(opts: ServeOptions): Server & { stopAll(): void } {
   const jobs = new Map<string, Job>();
   let statusCache: { at: number; value: AgentStatus[] } | null = null;
   const checkAgents = opts.checkAgents ?? (() => defaultCheckAgents(opts.config));
@@ -201,13 +202,23 @@ export function startServer(opts: ServeOptions): Server {
             preview: revealNames(plainPreview(e.turn.text), names),
             html: renderTurnHtml(e.turn, names),
           });
+        case "round-done":
+          return; // saved by runPlan; nothing for the page
         default:
           return emit(e);
       }
     };
     runPlan(plan, { outDir: opts.outDir, onEvent, signal: job.controller.signal })
-      .then((out) => emit({ type: "done", battle: detail(out.id, out.saved) }))
-      .catch((err: Error) => emit({ type: "error", message: job.controller.signal.aborted ? "Stopped." : err.message }))
+      .then((out) => emit({ type: "done", battle: detail(out.id, out.saved), ...(out.saveError ? { warning: `Couldn't save this battle: ${out.saveError}` } : {}) }))
+      .catch((err: BattleError) =>
+        emit({
+          type: "error",
+          // The terminal's "`battler continue` will…" hint; the page offers a button instead.
+          message: job.controller.signal.aborted ? "Stopped." : err.message.replace(/\nThe \d+ rounds? so far are saved;.*$/s, ""),
+          // Rounds saved before the failure can still be judged.
+          ...(err.savedId ? { savedId: err.savedId } : {}),
+        }),
+      )
       .finally(() => {
         job.done = true;
         for (const l of job.listeners) l({ type: "end" });
@@ -255,7 +266,7 @@ export function startServer(opts: ServeOptions): Server {
       if (body.continueFrom) {
         const id = String(body.continueFrom);
         if (!ID.test(id) || !existsSync(savedPath(id))) return send(res, 404, { error: "No such battle to continue." });
-        plan = continuePlan(loadSaved(savedPath(id)), savedPath(id), body.more ? "" : String(body.question ?? ""), {
+        plan = await continuePlan(loadSaved(savedPath(id)), savedPath(id), body.more ? "" : String(body.question ?? ""), {
           length: body.length,
           rounds: body.rounds === undefined ? undefined : Number(body.rounds),
           config: opts.config,
@@ -316,7 +327,7 @@ export function startServer(opts: ServeOptions): Server {
     "/assets/app.css": ["app.css", "text/css; charset=utf-8"],
   };
 
-  return createServer(async (req, res) => {
+  const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     try {
       if (!allowedHost(req)) return send(res, 403, { error: "Forbidden host." });
@@ -351,5 +362,11 @@ export function startServer(opts: ServeOptions): Server {
       if (e instanceof PlanError) return send(res, 400, { error: e.message });
       return send(res, 500, { error: (e as Error).message });
     }
-  }).listen(opts.port, opts.host);
+  });
+  return Object.assign(server.listen(opts.port, opts.host), {
+    /** Abort every running battle (which stops the CLIs they started). */
+    stopAll() {
+      for (const job of jobs.values()) if (!job.done) job.controller.abort();
+    },
+  });
 }

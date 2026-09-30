@@ -20,19 +20,21 @@ const saved = (grokSpec: string): SavedBattle => ({
   judges: ["Claude"],
 });
 
-const grokModel = (spec: string) => cursorModelOf(continuePlan(saved(spec), "x.json", "", { config: {} }).agents.find((a) => a.id === "grok")!);
+const ready = async () => null;
+const grokModel = async (spec: string) =>
+  cursorModelOf((await continuePlan(saved(spec), "x.json", "", { config: {}, check: ready })).agents.find((a) => a.id === "grok")!);
 
 test("the default Grok is saved as the default, not as a specific model", () => {
   assert.equal(cursorGrokAgent().spec, "grok");
   assert.equal(cursorGrokAgent("grok-4.7-high").spec, "grok:grok-4.7-high");
 });
 
-test("continuing uses today's default for battles saved with the old default model", () => {
-  assert.equal(grokModel("cursor:grok-4.7-medium"), DEFAULT_GROK_MODEL);
-  assert.equal(grokModel("grok"), DEFAULT_GROK_MODEL);
+test("continuing uses today's default for battles saved with the old default model", async () => {
+  assert.equal(await grokModel("cursor:grok-4.7-medium"), DEFAULT_GROK_MODEL);
+  assert.equal(await grokModel("grok"), DEFAULT_GROK_MODEL);
 });
 
-test("continuing keeps a Grok model that was chosen explicitly", () => {
-  assert.equal(grokModel("grok:grok-4.7-high"), "grok-4.7-high");
-  assert.equal(grokModel("cursor:grok-4.7-xhigh"), "grok-4.7-xhigh");
+test("continuing keeps a Grok model that was chosen explicitly", async () => {
+  assert.equal(await grokModel("grok:grok-4.7-high"), "grok-4.7-high");
+  assert.equal(await grokModel("cursor:grok-4.7-xhigh"), "grok-4.7-xhigh");
 });

@@ -1,7 +1,7 @@
 // End-to-end: the real CLI entry point, driving the fake claude / codex / cursor-agent binaries.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
@@ -243,4 +243,108 @@ test("with Gemini installed and signed in, it joins the battle and the panel", (
   assert.deepEqual(v.scorecard.map((s: { debater: string }) => s.debater).sort(), ["Claude", "GPT", "Gemini", "Grok"]);
   assert.equal(v.panel.judges.length, 4);
   assert.match(r.stderr, /Claude vs GPT vs Grok vs Gemini/);
+});
+
+/** The prompts actually sent to AIs (not the readiness checks) in a FAKE_LOG file. */
+const askCalls = (log: string) =>
+  existsSync(log)
+    ? readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l))
+        .filter((c) => c.args.includes("-p") || c.args[0] === "exec")
+    : [];
+
+test("an unwritable output folder fails before any AI is asked anything", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ro-"));
+  const out = join(dir, "battles");
+  mkdirSync(out);
+  chmodSync(out, 0o555);
+  const log = join(dir, "calls.jsonl");
+  const r = battler(["-s", "-o", out, "Q?"], { FAKE_LOG: log });
+  chmodSync(out, 0o755);
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /can't save battles in .*battles: .*Pick another folder with --out/);
+  assert.equal(askCalls(log).length, 0);
+});
+
+test("if judging fails, the rounds are saved and `continue` judges them in place", () => {
+  const dir = mkdtempSync(join(tmpdir(), "judge-fail-"));
+  const out = join(dir, "battles");
+  const failed = battler(["-s", "-o", out, "Q?"], { FAKE_FAIL_JUDGE: "1" });
+  assert.equal(failed.status, 1);
+  assert.match(failed.stderr, /No judge could deliver a verdict[\s\S]*The 2 rounds so far are saved; `battler continue` will have them judged\./);
+  const files = readdirSync(out).filter((f) => f.endsWith(".json"));
+  assert.equal(files.length, 1);
+  const partial = JSON.parse(readFileSync(join(out, files[0]), "utf8"));
+  assert.equal(partial.incomplete, true);
+  assert.equal(partial.rounds.length, 2);
+
+  const log = join(dir, "calls.jsonl");
+  const finished = battler(["continue", "--json", "-o", out], { FAKE_LOG: log });
+  assert.equal(finished.status, 0, finished.stderr);
+  assert.match(finished.stderr, /2 rounds so far · judging it now/);
+  assert.ok(JSON.parse(finished.stdout).verdict, "judged");
+  const asks = askCalls(log);
+  assert.ok(asks.length >= 1 && asks.every((c) => (c.args.at(-1) ?? "").includes("Consolidate") || c.cli !== "cursor-agent"), "only judging calls");
+  assert.deepEqual(readdirSync(out).filter((f) => f.endsWith(".json")), files, "the same battle, completed");
+  assert.equal(JSON.parse(readFileSync(join(out, files[0]), "utf8")).incomplete, undefined);
+});
+
+test("a dropped connection is retried and the battle finishes", () => {
+  const dir = mkdtempSync(join(tmpdir(), "flaky-"));
+  const r = battler(["--json", "-s", "-o", join(dir, "b"), "Q?"], { FAKE_FLAKY: "codex", FAKE_FLAKY_STATE: join(dir, "state") });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stderr, /GPT hit a hiccup, trying again/);
+  assert.equal(JSON.parse(r.stdout).verdict.scorecard.length, 3, "GPT stayed in");
+});
+
+test("hand-picked debaters and judges are checked before the battle", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pre-"));
+  const log = join(dir, "calls.jsonl");
+  const r = battler(["-s", "-a", "claude,gemini", "Q?"], { FAKE_LOG: log });
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /not ready:\n  Gemini: `gemini` not found on PATH/);
+  assert.equal(askCalls(log).length, 0);
+  const judge = battler(["-s", "-a", "claude,codex", "-j", "gemini", "Q?"], { FAKE_LOG: log });
+  assert.match(judge.stderr, /not ready:\n  Gemini:/);
+});
+
+test("continuing leaves out a debater whose CLI is gone", () => {
+  const dir = mkdtempSync(join(tmpdir(), "gone-"));
+  const out = join(dir, "battles");
+  assert.equal(battler(["--json", "-s", "-o", out, "Q?"]).status, 0);
+  const r = battler(["continue", "--json", "-o", out, "And?"], { FAKE_LOGGED_OUT: "codex" });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stderr, /Leaving out GPT: not logged in/);
+  assert.equal(JSON.parse(r.stdout).verdict.scorecard.length, 2);
+});
+
+test("a huge topic is refused with a clear limit", () => {
+  const r = battler(["-s", "x".repeat(10_001)]);
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /the topic is 10,001 characters; keep it under 10,000/);
+});
+
+test("stopping battler (SIGTERM) also stops the AI CLIs it started", async () => {
+  const marker = `sigterm-${Date.now()}`;
+  const { spawn } = await import("node:child_process");
+  const dir = mkdtempSync(join(tmpdir(), "sig-"));
+  const child = spawn(process.execPath, [ENTRY, "-s", "-o", join(dir, "b"), `Topic ${marker}?`], {
+    env: { PATH: `${FAKE_BIN}:${process.env.PATH}`, HOME: dir, XDG_CONFIG_HOME: join(dir, "c"), FAKE_DELAY_MS: "20000", NO_COLOR: "1" },
+    stdio: "ignore",
+  });
+  const running = () => spawnSync("pgrep", ["-f", marker]).stdout.toString().trim().split("\n").filter(Boolean).length;
+  for (let i = 0; i < 40 && running() < 2; i++) await new Promise((r) => setTimeout(r, 100));
+  assert.ok(running() >= 2, "battler and at least one AI CLI are running");
+  child.kill("SIGTERM");
+  await new Promise((r) => child.once("exit", r));
+  for (let i = 0; i < 20 && running() > 0; i++) await new Promise((r) => setTimeout(r, 100));
+  assert.equal(running(), 0, "no AI CLI left behind");
+});
+
+test("piping into something that closes early is not a crash", () => {
+  const r = spawnSync("sh", ["-c", `"${process.execPath}" "${ENTRY}" -s "Q?" | head -c 1`], {
+    encoding: "utf8",
+    env: { ...process.env, PATH: `${FAKE_BIN}:${process.env.PATH}`, XDG_CONFIG_HOME: mkdtempSync(join(tmpdir(), "c-")), NO_COLOR: "1" },
+    cwd: mkdtempSync(join(tmpdir(), "pipe-")),
+  });
+  assert.doesNotMatch(r.stderr, /EPIPE|Unhandled|at .*\.js:\d+/);
 });

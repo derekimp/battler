@@ -1,7 +1,7 @@
 // battler side panel: set up a battle, run it with the shared engine against your own tabs
 // (or copy & paste), and show progress, the verdict and history.
 import { runBattle } from "./lib/core/battle.js";
-import { finalPositions, savedAnswer, savedToResult, toSaved } from "./lib/core/saved-core.js";
+import { finalPositions, savedAnswer, savedToResult, toIncomplete, toSaved } from "./lib/core/saved-core.js";
 import { namedVerdict } from "./lib/core/verdict.js";
 import { htmlColor, renderRoundsHtml, renderTurnHtml, renderVerdictHtml } from "./lib/ui/html-report.js";
 import { escapeHtml as esc } from "./lib/ui/markdown.js";
@@ -35,10 +35,10 @@ async function history() {
   const { battles = [] } = await chrome.storage.local.get("battles");
   return battles;
 }
-async function saveBattle(saved) {
-  const id = `${Date.now()}`;
-  const battles = [{ id, saved }, ...(await history())].slice(0, HISTORY_LIMIT);
-  await chrome.storage.local.set({ battles });
+/** Save (or update) a battle in history. Pass the id from an earlier save to replace it. */
+async function saveBattle(saved, id = `${Date.now()}`) {
+  const rest = (await history()).filter((b) => b.id !== id);
+  await chrome.storage.local.set({ battles: [{ id, saved }, ...rest].slice(0, HISTORY_LIMIT) });
   return id;
 }
 
@@ -277,6 +277,8 @@ async function runLive({ topic, siteIds, length, rounds, continueFrom, question,
   const judges = pickJudges(agents, length);
   const controller = new AbortController();
   running = { controller };
+  // Judging an interrupted battle completes that same entry rather than adding another.
+  const battleId = more && continueFrom?.saved.incomplete ? continueFrom.id : `${Date.now()}`;
   pendingManual = new Map();
   const colorOf = (name) => siteById(agents.find((a) => a.name === name)?.id)?.color ?? htmlColor(name);
 
@@ -325,6 +327,19 @@ async function runLive({ topic, siteIds, length, rounds, continueFrom, question,
       case "start":
         names = e.names;
         break;
+      case "round-done":
+        // Keep the rounds so far, so closing the panel or a failure doesn't lose them.
+        saveBattle(
+          toIncomplete({ topic, length, rounds: e.history, labels: e.labels, followUpOf: followUpOf ?? undefined }, agents),
+          battleId,
+        ).catch(() => {});
+        break;
+      case "retry": {
+        const agent = agents.find((a) => a.name === e.agentName);
+        const note = agent && view.querySelector(`#round-${e.round} .turn.pending[data-site="${agent.id}"] .thinking`);
+        if (note) note.childNodes[1].textContent = "Hit a hiccup, trying again";
+        break;
+      }
       case "round-start": {
         setStep(`r${e.round}`);
         const sec = document.createElement("section");
@@ -415,7 +430,7 @@ async function runLive({ topic, siteIds, length, rounds, continueFrom, question,
     });
     if (more && continueFrom.saved.followUpOf) result.followUpOf = continueFrom.saved.followUpOf;
     const saved = toSaved(result, agents);
-    const id = await saveBattle(saved);
+    const id = await saveBattle(saved, battleId);
     running = null;
     showSaved({ id, saved }, { fresh: true });
   } catch (err) {
@@ -425,8 +440,15 @@ async function runLive({ topic, siteIds, length, rounds, continueFrom, question,
     $("#verdict-slot").innerHTML = `<section class="card error-card fade-in">
       <h2 style="color:var(--red)">${controller.signal.aborted ? "Battle stopped" : "The battle couldn't finish"}</h2>
       <pre>${esc(err.message)}</pre>
-      <p style="margin:12px 0 0"><button class="btn small" id="again">Back to start</button></p></section>`;
+      <p style="margin:12px 0 0;display:flex;gap:6px">
+        <button class="btn small primary" id="judge-saved" hidden>Judge the rounds so far</button>
+        <button class="btn small" id="again">Back to start</button></p></section>`;
     $("#again").addEventListener("click", renderNew);
+    const partial = (await history()).find((b) => b.id === battleId);
+    if (partial?.saved.incomplete && partial.saved.rounds.length) {
+      $("#judge-saved").hidden = false;
+      $("#judge-saved").addEventListener("click", () => judgeNow(partial));
+    }
   } finally {
     clearInterval(tick);
   }
@@ -447,9 +469,14 @@ function showSaved(entry, { fresh = false } = {}) {
       <div class="chips">${saved.agents.map((a) => `<span class="chip" style="--c:${siteById(a.id)?.color ?? htmlColor(a.name)}">${esc(a.name)}</span>`).join("")}
         <span class="muted">${saved.rounds.length} rounds · ${timeAgo(saved.createdAt)}</span></div>
     </div>
-    <div class="fade-in">${renderVerdictHtml(result)}</div>
+    ${
+      saved.incomplete
+        ? `<section class="card error-card fade-in"><h2>Stopped before the verdict</h2><p class="muted">Its ${saved.rounds.length} round${saved.rounds.length === 1 ? " is" : "s are"} saved below.</p><p style="margin:10px 0 0"><button class="btn small primary" id="judge-saved">Judge it now</button></p></section>`
+        : `<div class="fade-in">${renderVerdictHtml(result)}</div>`
+    }
     <section class="transcript"><h2>Transcript</h2>${renderRoundsHtml(result)}</section>`;
   $("#leave").addEventListener("click", renderNew);
+  $("#judge-saved")?.addEventListener("click", () => judgeNow(entry));
 
   const bar = document.createElement("div");
   bar.className = "followbar";
@@ -468,6 +495,17 @@ function showSaved(entry, { fresh = false } = {}) {
   if (fresh && v) view.scrollTo?.(0, 0);
 }
 
+/** Judge a battle that stopped before its verdict, without new rounds. */
+function judgeNow(entry) {
+  const siteIds = entry.saved.agents.map((a) => a.id).filter((id) => siteById(id));
+  runLive({ topic: entry.saved.topic, siteIds, length: entry.saved.length, rounds: 0, continueFrom: entry, more: true });
+}
+
+// Closing the panel stops a running battle; rounds finished so far are already in History.
+window.addEventListener("beforeunload", (e) => {
+  if (running) e.preventDefault();
+});
+
 /* ── History ───────────────────────────────────────────────────────────── */
 async function renderHistory() {
   if (running) return renderRunningNotice();
@@ -481,7 +519,7 @@ async function renderHistory() {
           const w = v && v.winner.debater !== "Tie" ? v.winner.debater : null;
           const color = w ? siteById(b.saved.agents.find((a) => a.name === w)?.id)?.color ?? htmlColor(w) : null;
           return `<button class="item" data-i="${i}"><span class="t">${b.saved.followUpOf ? "↳ " : ""}${esc(b.saved.topic)}</span>
-            <span class="m">${timeAgo(b.saved.createdAt)}${w ? ` · <span class="dot" style="--c:${color}"></span>${esc(w)} won` : ""}</span></button>`;
+            <span class="m">${timeAgo(b.saved.createdAt)}${b.saved.incomplete ? " · interrupted" : w ? ` · <span class="dot" style="--c:${color}"></span>${esc(w)} won` : ""}</span></button>`;
         })
         .join("")}</div>`
     : `<p class="empty">No battles yet. Each one is saved here, so you can come back and ask a follow-up.</p>`;

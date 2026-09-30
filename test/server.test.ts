@@ -153,3 +153,26 @@ test("LAN mode requires the token for data, not for the page", async () => {
     lan.close();
   }
 });
+
+test("a battle that fails after some rounds offers them for judging; history marks it interrupted", async () => {
+  process.env.FAKE_FAIL_JUDGE = "1";
+  try {
+    const { jobId } = await (await api("/api/battles", { method: "POST", body: JSON.stringify({ topic: "Judges down?", length: "short" }) })).json();
+    const evs = await events(jobId);
+    const err = evs.find((e) => e.type === "error");
+    assert.match(err.message, /No judge could deliver a verdict/);
+    assert.doesNotMatch(err.message, /battler continue/, "no terminal instructions in the browser");
+    assert.ok(err.savedId);
+    const list = (await (await api("/api/battles")).json()).battles;
+    const entry = list.find((b: any) => b.id === err.savedId);
+    assert.deepEqual([entry.incomplete, entry.headline], [true, "interrupted"]);
+
+    delete process.env.FAKE_FAIL_JUDGE;
+    const { jobId: again } = await (await api("/api/battles", { method: "POST", body: JSON.stringify({ continueFrom: err.savedId, more: true }) })).json();
+    const done = (await events(again)).find((e) => e.type === "done");
+    assert.equal(done.battle.id, err.savedId, "finishing it keeps the same battle");
+    assert.equal(done.battle.incomplete, false);
+  } finally {
+    delete process.env.FAKE_FAIL_JUDGE;
+  }
+});

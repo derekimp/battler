@@ -11,7 +11,8 @@ const args = process.argv.slice(2);
 const listed = (v) => (process.env[v] ?? "").split(",").includes(cli);
 if (process.env.FAKE_LOG) appendFileSync(process.env.FAKE_LOG, JSON.stringify({ cli, args }) + "\n");
 
-const stdin = () => (process.stdin.isTTY ? "" : readFileSync(0, "utf8"));
+let stdinText;
+const stdin = () => (stdinText ??= process.stdin.isTTY ? "" : readFileSync(0, "utf8"));
 // Like the real ones, Grok (via Cursor) is the slowest and Claude the quickest.
 const delay = Number(process.env.FAKE_DELAY_MS ?? 0) * ({ claude: 1, codex: 1.6, "cursor-agent": 2.4 }[cli] ?? 1) * (0.7 + Math.random() * 0.6);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -83,6 +84,19 @@ async function main() {
 
   await sleep(delay);
   if (listed("FAKE_FAIL")) return console.error(`${cli}: simulated failure`), process.exit(2);
+  // FAKE_FLAKY=codex: that CLI's first call drops the connection; later calls work.
+  if (listed("FAKE_FLAKY") && process.env.FAKE_FLAKY_STATE) {
+    const marker = `${process.env.FAKE_FLAKY_STATE}.${cli}`;
+    if (!existsSync(marker)) {
+      writeFileSync(marker, "1");
+      return console.error("Error: read ECONNRESET (network connection lost)"), process.exit(1);
+    }
+  }
+  // FAKE_FAIL_JUDGE=1: every judging call fails (debate rounds still work).
+  const promptText = cli === "cursor-agent" ? args.at(-1) : cli === "gemini" ? args[args.indexOf("-p") + 1] : stdin();
+  if (process.env.FAKE_FAIL_JUDGE && (promptText ?? "").includes("Consolidate this debate")) {
+    return console.error(`${cli}: judge unavailable`), process.exit(3);
+  }
 
   if (cli === "claude") {
     const model = args.includes("--model") ? args[args.indexOf("--model") + 1] : "default";

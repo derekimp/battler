@@ -157,3 +157,29 @@ export function panelNote(v: Verdict): string | null {
   const who = j.length === 1 ? j[0] : `${j.slice(0, -1).join(", ")} and ${j.at(-1)}`;
   return `Scored by ${who}${v.panel.selfScoringExcluded ? "; no judge scored itself" : ""}. Each score is the average of the judges' checklist ratings.`;
 }
+
+/**
+ * Normalise the debater labels a judge wrote ("debater a", "Debater  B", "Debater C's") and drop
+ * entries for debaters that don't exist, so a judge can't invent a "Debater D" row.
+ */
+export function sanitizeVerdict(v: Verdict | null, valid: Set<string>): Verdict | null {
+  if (!v) return null;
+  const norm = (s: string) => {
+    const m = s.trim().match(/^debater\s*([a-z])\b/i);
+    return m ? `Debater ${m[1].toUpperCase()}` : s.trim();
+  };
+  const keep = (s: string) => valid.has(norm(s));
+  const seen = new Set<string>();
+  const scorecard = v.scorecard
+    .map((e) => ({ ...e, debater: norm(e.debater) }))
+    .filter((e) => valid.has(e.debater) && !seen.has(e.debater) && seen.add(e.debater));
+  const winner = norm(v.winner.debater);
+  return {
+    ...v,
+    scorecard,
+    disagreements: v.disagreements
+      .map((d) => ({ ...d, sides: d.sides.map((side) => ({ ...side, debaters: side.debaters.filter(keep).map(norm) })) }))
+      .filter((d) => d.sides.some((side) => side.debaters.length || side.view)),
+    winner: { ...v.winner, debater: valid.has(winner) ? winner : "tie" },
+  };
+}

@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+Hardening against failures:
+
+- A dropped connection, a 5xx or an overloaded service is retried once; a used-up plan, a missing CLI or a bad model isn't.
+- Rounds are saved as they finish. If judging fails, or the battle is stopped, `battler continue` (or the web app's "Judge the rounds so far") judges what's there, completing the same battle.
+- The output folder is checked before a battle starts, and a finished verdict is still shown if saving fails.
+- Hand-picked debaters and judges are checked before the battle; continuing a battle leaves out debaters that are no longer ready.
+- Judges can't add debaters that don't exist; sloppy labels ("debater a") are normalised.
+- When every AI fails because you're offline, battler says so.
+- Stopping battler (Ctrl+C, `kill`, closing the terminal) also stops the AI CLIs it started; so does stopping `battler serve`.
+- Piping into `head` etc. no longer crashes; very long topics are refused clearly; old Node versions get a clear message.
+- Chrome extension: a site's own notice (a usage limit, "something went wrong") is treated as a failure, not an answer; a lingering Stop button no longer stalls a reply; progress is saved each round and interrupted battles can be judged later.
+
 ## 0.1.0 (2026-09-30)
 
 First public version.

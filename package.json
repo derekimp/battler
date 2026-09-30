@@ -13,13 +13,13 @@
   },
   "type": "module",
   "bin": {
-    "battler": "./dist/cli.js"
+    "battler": "./dist/bin.js"
   },
   "engines": {
     "node": ">=22"
   },
   "scripts": {
-    "build": "rm -rf dist && tsc && chmod +x dist/cli.js",
+    "build": "rm -rf dist && tsc && chmod +x dist/bin.js dist/cli.js",
     "prepare": "npm run build",
     "dev": "node src/cli.ts",
     "typecheck": "tsc -p tsconfig.test.json",

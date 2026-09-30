@@ -19,6 +19,30 @@ export interface SavedBattle {
   verdictText: string;
   judges: string[];
   followUpOf?: string;
+  /** Saved after a round, before the verdict: the battle stopped (or is still running). */
+  incomplete?: boolean;
+}
+
+/** A battle that stopped before its verdict, from its rounds so far. */
+export function toIncomplete(
+  p: { topic: string; length: Length; rounds: Turn[][]; labels: Map<string, string>; followUpOf?: string },
+  agents: Agent[],
+  createdAt = new Date(),
+): SavedBattle {
+  return {
+    version: 1,
+    topic: p.topic,
+    length: p.length,
+    createdAt: createdAt.toISOString(),
+    agents: agents.map((a) => ({ id: a.id, name: a.name, ...(a.spec ? { spec: a.spec } : {}) })),
+    labels: [...p.labels],
+    rounds: p.rounds,
+    verdict: null,
+    verdictText: "",
+    judges: [],
+    ...(p.followUpOf ? { followUpOf: p.followUpOf } : {}),
+    incomplete: true,
+  };
 }
 
 export function toSaved(result: BattleResult, agents: Agent[], createdAt = new Date()): SavedBattle {

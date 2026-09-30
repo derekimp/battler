@@ -475,6 +475,12 @@ function renderLive(jobId) {
         });
         break;
       }
+      case "retry": {
+        const card = typeof e.round === "number" ? $(`#round-${e.round} [data-name="${CSS.escape(e.agentName)}"]`) : null;
+        const note = card && $(".thinking", card);
+        if (note) note.lastChild.textContent = "Hit a hiccup, trying again…";
+        break;
+      }
       case "turn-failed": {
         const card = $(`#round-${e.round} [data-name="${CSS.escape(e.agentName)}"]`);
         if (!card) break;
@@ -511,6 +517,7 @@ function renderLive(jobId) {
         rounds.insertAdjacentHTML("beforebegin", '<h2 style="margin-top:36px">Transcript</h2>');
         // Oldest round first once it's all in.
         [...rounds.children].reverse().forEach((c) => rounds.append(c));
+        if (e.warning) toast(e.warning);
         history.replaceState(null, "", `#/b/${encodeURIComponent(e.battle.id)}`);
         followBar(e.battle);
         loadHistory();
@@ -523,8 +530,12 @@ function renderLive(jobId) {
         $("#verdict-slot").innerHTML = `<section class="card error-card fade-in">
           <h2 style="color:var(--red)">${e.message === "Stopped." ? "Battle stopped" : "The battle couldn't finish"}</h2>
           <pre>${esc(e.message)}</pre>
-          <p style="margin-top:14px"><a class="btn" href="#/">Start a new battle</a></p>
+          <p style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
+            ${e.savedId ? '<button class="btn primary" id="finish">Judge the rounds so far</button>' : ""}
+            <a class="btn" href="#/">Start a new battle</a></p>
         </section>`;
+        if (e.savedId) $("#finish").addEventListener("click", () => finishBattle(e.savedId));
+        loadHistory();
         break;
       }
       case "end":
@@ -553,12 +564,28 @@ async function renderSaved(id) {
   }
   const lengthName = LENGTHS.find((l) => l.value === b.length)?.title ?? b.length;
   const judged = b.judges.length > 1 ? `judged by a panel of ${b.judges.length}` : `judged by ${b.judges[0]}`;
+  const verdictPart = b.incomplete
+    ? `<section class="card error-card fade-in"><h2>This battle stopped before the verdict</h2>
+        <p class="muted">Its ${b.rounds} round${b.rounds === 1 ? " is" : "s are"} saved below. The judges can score them now.</p>
+        <p style="margin-top:12px"><button class="btn primary" id="finish">Judge it now</button></p></section>`
+    : `<div class="fade-in">${b.verdictHtml}</div>`;
   view.innerHTML = `
-    ${headHtml({ topic: b.topic, followUpOf: b.followUpOf, debaters: b.debaters, meta: `${lengthName} · ${b.rounds} round${b.rounds > 1 ? "s" : ""} · ${judged} · ${timeAgo(b.createdAt)}` })}
-    <div class="fade-in">${b.verdictHtml}</div>
+    ${headHtml({ topic: b.topic, followUpOf: b.followUpOf, debaters: b.debaters, meta: `${lengthName} · ${b.rounds} round${b.rounds > 1 ? "s" : ""}${b.incomplete ? "" : ` · ${judged}`} · ${timeAgo(b.createdAt)}` })}
+    ${verdictPart}
     <section class="transcript"><h2>Transcript</h2>${b.roundsHtml}</section>`;
+  $("#finish")?.addEventListener("click", () => finishBattle(b.id));
   followBar(b);
   renderHistory();
+}
+
+/** Judge a battle that stopped before its verdict (no new rounds). */
+async function finishBattle(id) {
+  try {
+    const { jobId } = await api("/api/battles", { method: "POST", body: { continueFrom: id, more: true } });
+    location.hash = `#/live/${jobId}`;
+  } catch (e) {
+    toast(e.message);
+  }
 }
 
 /* ── Follow-up bar ─────────────────────────────────────── */

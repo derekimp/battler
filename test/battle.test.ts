@@ -231,3 +231,109 @@ test("a follow-up gives each debater the earlier debate as background", async ()
   assert.match(judge.prompts[0], /follow-up to an earlier one on "Tabs or spaces\?"/);
   assert.equal(result.followUpOf, "Tabs or spaces?");
 });
+
+test("a hiccup is retried once; a used-up plan is not", async () => {
+  let flakyCalls = 0;
+  const flaky = fakeAgent("flaky", () => {
+    if (++flakyCalls === 1) throw new Error("read ECONNRESET");
+    return "## Position\nrecovered";
+  });
+  let limitedCalls = 0;
+  const limited = fakeAgent("limited", () => {
+    limitedCalls++;
+    throw new Error("you've hit your usage limit");
+  });
+  const events: BattleEvent[] = [];
+  const result = await runBattle({
+    topic: "T", agents: [fakeAgent("a"), flaky, limited], judges: [fakeAgent("j", (p) => verdictJson(p))],
+    rounds: 1, length: "short", retryDelayMs: 0, onEvent: (e) => events.push(e),
+  });
+  assert.equal(flakyCalls, 2);
+  assert.equal(limitedCalls, 1, "not retried");
+  assert.ok(events.some((e) => e.type === "retry" && e.agentName === "flaky"));
+  assert.equal(result.rounds[0].find((t) => t.agentId === "flaky")?.text, "## Position\nrecovered");
+  assert.deepEqual(result.dropped.map((d) => d.agentName), ["limited"]);
+});
+
+test("a hiccup twice in a row drops the debater", async () => {
+  const down = fakeAgent("down", () => {
+    throw new Error("503 Service Unavailable");
+  });
+  const result = await runBattle({
+    topic: "T", agents: [fakeAgent("a"), fakeAgent("b"), down], judges: [fakeAgent("j", (p) => verdictJson(p))],
+    rounds: 1, length: "short", retryDelayMs: 0,
+  });
+  assert.equal(down.prompts.length, 2);
+  assert.deepEqual(result.dropped.map((d) => d.agentName), ["down"]);
+});
+
+test("when everyone fails because the machine is offline, it says so", async () => {
+  const offline = (id: string) =>
+    fakeAgent(id, () => {
+      throw new Error("getaddrinfo ENOTFOUND api.example.com");
+    });
+  await assert.rejects(
+    runBattle({ topic: "T", agents: [offline("a"), offline("b")], judges: [fakeAgent("j")], rounds: 1, length: "short", retryDelayMs: 0 }),
+    /Can't reach the AI services\. Check your internet connection/,
+  );
+});
+
+test("each finished round is reported with the history so far", async () => {
+  const events: BattleEvent[] = [];
+  await runBattle({
+    topic: "T", agents: [fakeAgent("a"), fakeAgent("b")], judges: [fakeAgent("j", (p) => verdictJson(p))],
+    rounds: 2, length: "short", onEvent: (e) => events.push(e),
+  });
+  const done = events.filter((e) => e.type === "round-done");
+  assert.deepEqual(done.map((e) => e.type === "round-done" && e.history.length), [1, 2]);
+});
+
+test("judges can't invent debaters, and sloppy labels are normalised", async () => {
+  const judge = fakeAgent("j", (p) =>
+    verdictJson(p, {
+      scorecard: [
+        { debater: "debater a", position: "p", strength: "s", weakness: "w", criteria: { accuracy: 5, reasoning: 5, engagement: 5, calibration: 5 } },
+        { debater: "Debater  B", position: "p", strength: "s", weakness: "w", criteria: { accuracy: 3, reasoning: 3, engagement: 3, calibration: 3 } },
+        { debater: "Debater D", position: "invented", strength: "s", weakness: "w", criteria: { accuracy: 5, reasoning: 5, engagement: 5, calibration: 5 } },
+      ],
+      disagreements: [{ point: "x", sides: [{ debaters: ["Debater D"], view: "ghost" }, { debaters: ["debater b"], view: "real" }] }],
+      winner: { debater: "Debater D", reason: "ghost won" },
+    }),
+  );
+  const result = await runBattle({ topic: "T", agents: [fakeAgent("a"), fakeAgent("b")], judges: [judge], rounds: 1, length: "short", shuffle: identity });
+  assert.deepEqual(result.verdict!.scorecard.map((s) => s.debater).sort(), ["Debater A", "Debater B"]);
+  assert.deepEqual(result.verdict!.disagreements[0].sides.map((s) => s.debaters), [[], ["Debater B"]]);
+  assert.equal(result.verdict!.winner.debater, "Debater A", "the scorecard's top wins, not the invented one");
+});
+
+test("if every panel judge dropped out of the debate, they still judge rather than crash", async () => {
+  let calls = 0;
+  const shaky = (id: string) =>
+    fakeAgent(id, (p) => {
+      if (p.includes("Consolidate")) return verdictJson(p);
+      if (++calls <= 2 && id !== "c") throw new Error("usage limit");
+      return "pos";
+    });
+  const a = shaky("a");
+  const b = shaky("b");
+  const c = fakeAgent("c");
+  const d = fakeAgent("d");
+  const result = await runBattle({ topic: "T", agents: [a, b, c, d], judges: [a, b], rounds: 1, length: "medium", retryDelayMs: 0 });
+  assert.ok(result.verdict, "judged by the originally chosen judges");
+});
+
+test("resuming with 0 rounds just judges the saved rounds", async () => {
+  const a = fakeAgent("a");
+  const judge = fakeAgent("j", (p) => verdictJson(p));
+  const saved = [[
+    { agentId: "a", agentName: "a", round: 1, text: "x", ms: 1 },
+    { agentId: "b", agentName: "b", round: 1, text: "y", ms: 1 },
+  ]];
+  const result = await runBattle({
+    topic: "T", agents: [a, fakeAgent("b")], judges: [judge], rounds: 0, length: "short",
+    labels: new Map([["a", "Debater A"], ["b", "Debater B"]]), resume: saved,
+  });
+  assert.equal(a.prompts.length, 0, "no new rounds");
+  assert.equal(result.rounds.length, 1);
+  assert.ok(result.verdict);
+});

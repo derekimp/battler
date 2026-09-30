@@ -59,6 +59,8 @@ export type BattleEvent =
   | { type: "round-start"; round: number; total: number; label: string; agents: string[] }
   | { type: "turn-done"; turn: Turn }
   | { type: "turn-failed"; round: number; agentName: string; error: string }
+  | { type: "retry"; round: number | "verdict"; agentName: string; error: string }
+  | { type: "round-done"; round: number; history: Turn[][]; names: Map<string, string>; labels: Map<string, string> }
   | { type: "judge-start"; judges: string[] }
   | { type: "judge-done"; judgeName: string; ms: number; ok: boolean }
   | { type: "judge-failed"; judgeName: string; error: string };

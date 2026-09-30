@@ -153,7 +153,9 @@
     const reply = await waitFor(() => {
       const replies = all(driver.replies);
       return replies.length > before ? replies.at(-1) : null;
-    }, { timeout: 90_000, what: "the reply to start" });
+    }, { timeout: 90_000, what: "the reply to start" }).catch(() => {
+      throw new Error("timed out waiting for the reply to start. The message may not have been sent; if this keeps happening, switch to copy & paste mode");
+    });
 
     let last = "";
     let stableSince = Date.now();
@@ -167,9 +169,24 @@
         stableSince = Date.now();
         progress(text.length);
       }
-      if (!generating(current) && text && Date.now() - stableSince > 2500) return text;
+      const stable = Date.now() - stableSince;
+      // Normally: done when the site says so. Some sites keep a Stop button up long after the
+      // text is final (Cursor while its cloud environment starts), so also accept 45s of silence.
+      if (text && ((!generating(current) && stable > 2500) || stable > 45_000)) return checked(text);
       if (Date.now() > deadline) throw new Error("the reply took longer than 8 minutes");
     }
+  }
+
+  /**
+   * Sites sometimes answer with their own notice (a usage limit, "something went wrong") in place
+   * of the model's reply. Those are short; don't let them into the debate as an argument.
+   */
+  const SITE_NOTICE = /(reached|hit|exceeded) (?:your|our|the)? ?(?:usage |message |daily |hourly )?(?:limit|cap)|usage limit|rate limit|too many requests|something went wrong|an error occurred|network error|try again later|upgrade (?:to|your plan)|unusual activity|verify you are human/i;
+  function checked(text) {
+    if (text.length < 500 && SITE_NOTICE.test(text)) {
+      throw new Error(`the site showed a notice instead of an answer: "${text.replace(/\s+/g, " ").slice(0, 160)}"`);
+    }
+    return text;
   }
 
   /* ── HTML → Markdown, for what these sites render ─────────────────────── */
@@ -233,7 +250,7 @@
 
   // Outside the extension (e.g. pasted into a page to test a driver), expose the steps instead.
   if (!globalThis.chrome?.runtime?.id) {
-    window.__battlerDriver = { status, ask, toMarkdown };
+    window.__battlerDriver = { status, ask, toMarkdown, checked };
     return;
   }
 

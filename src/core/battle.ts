@@ -1,7 +1,8 @@
 import type { Agent, BattleEvent, BattleResult, Turn } from "./types.ts";
 import { DEBATER_SYSTEM, JUDGE_SYSTEM, debatePrompt, followUpBackground, judgePrompt, openingPrompt, type Position } from "./prompts.ts";
 import { mergePanel, type JudgeVerdict } from "./panel.ts";
-import { parseVerdict, type Length } from "./verdict.ts";
+import { isTransient, looksOffline, message } from "./errors.ts";
+import { parseVerdict, sanitizeVerdict, type Length } from "./verdict.ts";
 
 export interface BattleOptions {
   topic: string;
@@ -27,6 +28,8 @@ export interface BattleOptions {
   resume?: Turn[][];
   /** Answer a follow-up question, with an earlier battle as background. */
   followUp?: FollowUp;
+  /** Wait before retrying a call that failed with a hiccup (network, 5xx). Tests pass 0. */
+  retryDelayMs?: number;
 }
 
 export interface FollowUp {
@@ -55,8 +58,27 @@ export function randomShuffle<T>(items: T[]): T[] {
   return a;
 }
 
+const sleep = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve) => {
+    const t = setTimeout(resolve, ms);
+    signal?.addEventListener("abort", () => (clearTimeout(t), resolve()), { once: true });
+  });
+
 export async function runBattle(opts: BattleOptions): Promise<BattleResult> {
-  const { topic, length, onEvent = () => {}, signal, shuffle = randomShuffle, followUp } = opts;
+  const { topic, length, onEvent = () => {}, signal, shuffle = randomShuffle, followUp, retryDelayMs = 3000 } = opts;
+
+  /** Ask, and if it fails with a hiccup (not a used-up plan or a missing CLI), ask once more. */
+  const ask = async (agent: Agent, prompt: string, system: string, round: number | "verdict") => {
+    try {
+      return await agent.ask(prompt, { system, signal });
+    } catch (err) {
+      if (!isTransient(err) || signal?.aborted) throw err;
+      onEvent({ type: "retry", agentName: agent.name, round, error: message(err) });
+      await sleep(retryDelayMs, signal);
+      if (signal?.aborted) throw err;
+      return await agent.ask(prompt, { system, signal });
+    }
+  };
   const labels = opts.labels ?? new Map(shuffle(opts.agents).map((a, i) => [a.id, anonLabel(i)]));
   const names = new Map(opts.agents.map((a) => [labels.get(a.id)!, a.name]));
   onEvent({ type: "start", names });
@@ -87,7 +109,7 @@ export async function runBattle(opts: BattleOptions): Promise<BattleResult> {
           prompt = debatePrompt(topic, round, own, others, length);
         }
         const start = Date.now();
-        const text = await agent.ask(prompt, { system: DEBATER_SYSTEM, signal });
+        const text = await ask(agent, prompt, DEBATER_SYSTEM, round);
         const turn = { agentId: agent.id, agentName: agent.name, round, text, ms: Date.now() - start };
         onEvent({ type: "turn-done", turn });
         return turn;
@@ -104,11 +126,17 @@ export async function runBattle(opts: BattleOptions): Promise<BattleResult> {
     if (signal?.aborted) throw new Error("Battle aborted");
     // A debater that fails a round has no current position, so it sits out the rest.
     active = active.filter((a) => turns.some((t) => t.agentId === a.id));
-    if (turns.length) history.push(turns);
+    if (turns.length) {
+      history.push(turns);
+      onEvent({ type: "round-done", round, history: history.map((r) => [...r]), names, labels });
+    }
   }
 
   const debaters = new Set(history.flat().map((t) => t.agentId));
   if (debaters.size < 2) {
+    if (dropped.length && dropped.every((d) => looksOffline(d.error))) {
+      throw new Error("Can't reach the AI services. Check your internet connection and try again.");
+    }
     const reasons = dropped.map((d) => `  - ${d.agentName}: ${d.error}`).join("\n");
     throw new Error(`Need at least 2 working debaters, got ${debaters.size}.\n${reasons}`);
   }
@@ -121,21 +149,25 @@ export async function runBattle(opts: BattleOptions): Promise<BattleResult> {
   }));
   const prompt = judgePrompt(topic, positions, length, followUp);
 
-  // A judge whose own debate turns failed probably can't judge either.
-  const judges = opts.judges.filter((j) => !dropped.some((d) => d.agentName === j.name) || opts.judges.length === 1);
+  // A judge whose own debate turns failed probably can't judge either (unless that leaves nobody).
+  const healthy = opts.judges.filter((j) => !dropped.some((d) => d.agentName === j.name));
+  const judges = healthy.length ? healthy : opts.judges;
   onEvent({ type: "judge-start", judges: judges.map((j) => j.name) });
   const settled = await Promise.allSettled(
     judges.map(async (judge) => {
       const start = Date.now();
-      let text = await judge.ask(prompt, { system: JUDGE_SYSTEM, signal });
-      let verdict = parseVerdict(text);
+      const validLabels = new Set(labels.values());
+      let text = await ask(judge, prompt, JUDGE_SYSTEM, "verdict");
+      let verdict = sanitizeVerdict(parseVerdict(text), validLabels);
       if (!verdict) {
         // One retry: models occasionally answer in prose despite the instructions.
-        text = await judge.ask(
+        text = await ask(
+          judge,
           `${prompt}\n\nYour previous reply was not a valid JSON object. Reply again with ONLY the JSON object.`,
-          { system: JUDGE_SYSTEM, signal },
+          JUDGE_SYSTEM,
+          "verdict",
         );
-        verdict = parseVerdict(text);
+        verdict = sanitizeVerdict(parseVerdict(text), validLabels);
       }
       onEvent({ type: "judge-done", judgeName: judge.name, ms: Date.now() - start, ok: Boolean(verdict) });
       return { judge, text, verdict };

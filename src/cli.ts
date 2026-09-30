@@ -146,7 +146,11 @@ async function main() {
   const lengthFlag = shorthand ?? values.length;
   if (lengthFlag && !LENGTHS.includes(lengthFlag as Length)) fail(`--length must be one of ${LENGTHS.join(", ")}`);
   const roundsFlag = values.rounds === undefined ? undefined : Number(values.rounds);
-  if (roundsFlag !== undefined && (!Number.isInteger(roundsFlag) || roundsFlag < 1 || roundsFlag > 5)) fail("--rounds must be 1-5");
+  // 0 is allowed only with `continue`: judge a battle that stopped before its verdict.
+  const minRounds = positionals[0] === "continue" ? 0 : 1;
+  if (roundsFlag !== undefined && (!Number.isInteger(roundsFlag) || roundsFlag < minRounds || roundsFlag > 5)) {
+    fail(`--rounds must be ${minRounds}-5`);
+  }
 
   let plan: Plan;
   let chat = false; // offer follow-ups after each verdict
@@ -160,7 +164,7 @@ async function main() {
         process.stderr.write("\n");
         question = await terminalPrompter.text("Follow-up question? (Enter to keep debating the same topic)");
       }
-      plan = continuePlan(saved, from, question, { length: lengthFlag, rounds: roundsFlag, config, judge: values.judge });
+      plan = await continuePlan(saved, from, question, { length: lengthFlag, rounds: roundsFlag, config, judge: values.judge });
       chat = process.stdin.isTTY && process.stderr.isTTY && !values.json;
     } else {
       // Interactive when run bare in a terminal: ask for the topic (and length, unless it's set).
@@ -200,7 +204,7 @@ async function main() {
     const question = await terminalPrompter.text("Follow-up question? (Enter to finish, \"more\" for another round)");
     if (!question) break;
     try {
-      plan = continuePlan(saved, jsonFile, question.toLowerCase() === "more" ? "" : question, {
+      plan = await continuePlan(saved, jsonFile, question.toLowerCase() === "more" ? "" : question, {
         length: lengthFlag,
         rounds: roundsFlag,
         config,
@@ -221,8 +225,9 @@ async function serve(outDir: string, config: Config, opts: { port?: string; lan:
   let port = opts.port ? Number(opts.port) : 4747;
   if (!Number.isInteger(port) || port < 1 || port > 65535) fail("--port must be a number from 1 to 65535");
   // Try the next ports if the default one is taken.
+  let server!: ReturnType<typeof startServer>;
   for (let attempt = 0; ; attempt++) {
-    const server = startServer({ port, host: opts.lan ? "0.0.0.0" : "127.0.0.1", outDir, config, token });
+    server = startServer({ port, host: opts.lan ? "0.0.0.0" : "127.0.0.1", outDir, config, token });
     const ok = await new Promise<boolean>((res) => {
       server.once("listening", () => res(true));
       server.once("error", (e: NodeJS.ErrnoException) => {
@@ -244,7 +249,15 @@ async function serve(outDir: string, config: Config, opts: { port?: string; lan:
   log(err.dim(`  Battles are saved in ${displayPath(outDir)}. Press Ctrl+C to stop.`));
   log();
   if (opts.open) spawn("open", [token ? `${local}?t=${token}` : local], { stdio: "ignore", detached: true }).on("error", () => {}).unref();
-  await new Promise(() => {}); // run until Ctrl+C
+  // Stopping the server stops its battles (and so the AI CLIs they started).
+  for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
+    process.once(sig, () => {
+      server.stopAll();
+      log(err.dim("\n  Stopped."));
+      process.exit(0);
+    });
+  }
+  await new Promise(() => {}); // run until stopped
 }
 
 /** Run a plan with terminal progress, save the reports and the battle, and print the verdict. */
@@ -265,7 +278,8 @@ async function execute(plan: Plan, outDir: string, openIt: boolean, json: boolea
     progress.fail();
     fail("interrupted");
   };
-  process.once("SIGINT", onSigint);
+  // Ctrl+C, `kill`, or the terminal closing: stop the AI CLIs we started, not just ourselves.
+  for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.once(sig, onSigint);
 
   const started = Date.now();
   let out: RunOutput;
@@ -275,17 +289,22 @@ async function execute(plan: Plan, outDir: string, openIt: boolean, json: boolea
     progress.fail();
     throw e;
   } finally {
-    process.off("SIGINT", onSigint);
+    for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.off(sig, onSigint);
   }
-  const { result, htmlFile, mdFile, jsonFile, saved } = out;
+  const { result, htmlFile, mdFile, jsonFile, saved, saveError } = out;
 
-  progress.finish(
-    `Done in ${formatDuration(Date.now() - started)}`,
-    `Report: ${displayPath(htmlFile)}`,
-    openIt ? "Opening it in your browser." : "Add --open to view it in your browser.",
-    `Follow up: battler continue "your question"   ·   more rounds: battler continue`,
-  );
-  if (openIt) spawn("open", [htmlFile], { stdio: "ignore", detached: true }).on("error", () => {}).unref();
+  if (saveError) {
+    progress.finish(`Done in ${formatDuration(Date.now() - started)}`);
+    log(err.yellow(`  Couldn't save this battle (${saveError}). The verdict is below; copy anything you want to keep.`));
+  } else {
+    progress.finish(
+      `Done in ${formatDuration(Date.now() - started)}`,
+      `Report: ${displayPath(htmlFile)}`,
+      openIt ? "Opening it in your browser." : "Add --open to view it in your browser.",
+      `Follow up: battler continue "your question"   ·   more rounds: battler continue`,
+    );
+    if (openIt) spawn("open", [htmlFile], { stdio: "ignore", detached: true }).on("error", () => {}).unref();
+  }
 
   if (json) {
     const verdict = namedVerdict(result);
@@ -307,5 +326,11 @@ async function execute(plan: Plan, outDir: string, openIt: boolean, json: boolea
   }
   return { result, jsonFile, saved };
 }
+
+// `battler … | head` closes stdout early; that's fine, not a crash.
+process.stdout.on("error", (e: NodeJS.ErrnoException) => {
+  if (e.code === "EPIPE") process.exit(0);
+  throw e;
+});
 
 main().catch((e) => fail(e instanceof Error ? e.message : String(e)));

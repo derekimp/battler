@@ -51,7 +51,8 @@ const INSTALL_HINTS: Record<string, string> = {
   gemini: "install Gemini CLI: npm install -g @google/gemini-cli",
 };
 
-const DEFAULT_TIMEOUT_MS = 5 * 60_000;
+// Long battles on slow models (Grok via Cursor adds a cloud environment start) can take a while.
+const DEFAULT_TIMEOUT_MS = 8 * 60_000;
 
 function run(
   cmd: string,

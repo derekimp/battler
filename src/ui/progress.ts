@@ -72,6 +72,15 @@ export class Progress {
       case "turn-failed":
         this.errors.push(`${e.agentName}: ${e.error}`);
         return this.update(e.agentName, { state: "failed", note: e.error.split("\n")[0] });
+      case "retry": {
+        const who = e.agentName;
+        const row = this.rows.find((r) => r.name === who);
+        if (row) row.note = `hit a hiccup, trying again (${e.error.split("\n")[0]})`;
+        if (!this.live) this.print(`    ${this.st.yellow("↻")} ${who} ${this.st.dim("hit a hiccup, trying again")}`);
+        return;
+      }
+      case "round-done":
+        return;
       case "judge-start":
         return this.phase(e.judges.length > 1 ? "Verdict · judge panel" : "Verdict", e.judges, "judging");
       case "judge-done":
