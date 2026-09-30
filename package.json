@@ -1,0 +1,39 @@
+{
+  "name": "battler",
+  "version": "0.1.0",
+  "description": "Make your AI subscriptions (Claude, ChatGPT/Codex, Grok via Cursor) debate a topic and return a consolidated verdict.",
+  "type": "module",
+  "bin": {
+    "battler": "./dist/cli.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepare": "tsc",
+    "dev": "node src/cli.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "license": "MIT",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "ai",
+    "llm",
+    "debate",
+    "claude",
+    "chatgpt",
+    "codex",
+    "grok",
+    "cursor",
+    "cli"
+  ],
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "typescript": "^7.0.2"
+  }
+}
