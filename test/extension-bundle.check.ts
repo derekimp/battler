@@ -12,7 +12,7 @@ const files = (dir: string): string[] =>
 test("the manifest is a valid MV3 manifest and every file it names exists", () => {
   const m = JSON.parse(readFileSync(join(EXT, "manifest.json"), "utf8"));
   assert.equal(m.manifest_version, 3);
-  assert.deepEqual(m.host_permissions, ["https://chatgpt.com/*", "https://claude.ai/*", "https://grok.com/*"]);
+  assert.deepEqual(m.host_permissions, ["https://chatgpt.com/*", "https://claude.ai/*", "https://cursor.com/*"]);
   for (const f of [m.background.service_worker, m.side_panel.default_path, ...m.content_scripts[0].js, ...Object.values(m.icons)]) {
     assert.ok(existsSync(join(EXT, f as string)), f as string);
   }

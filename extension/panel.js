@@ -97,7 +97,7 @@ function renderNew() {
         const line = siteLine(site);
         return `<label class="site" style="--c:${site.color}">
           <input type="checkbox" data-site="${site.id}" ${prefs.selected.has(site.id) ? "checked" : ""}>
-          <span><span class="nm"><span class="dot"></span>${esc(site.name)}</span><span class="st ${line.cls}">${esc(line.text)}</span></span>
+          <span><span class="nm"><span class="dot"></span>${esc(site.name)}${site.via ? ` <small class="muted">via ${esc(site.via)}</small>` : ""}</span><span class="st ${line.cls}">${esc(line.text)}</span></span>
           ${line.action ? `<button type="button" class="open" data-open="${site.id}">${line.action}</button>` : "<span></span>"}
         </label>`;
       }).join("")}</div>

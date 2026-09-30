@@ -14,7 +14,7 @@ async function ownedTab(site) {
   if (id) {
     try {
       const tab = await chrome.tabs.get(id);
-      if (tab.url?.startsWith(site.home)) return tab;
+      if (tab.url && new URL(tab.url).hostname === new URL(site.home).hostname) return tab;
     } catch {}
   }
   const tab = await chrome.tabs.create({ url: site.home, active: false });
@@ -61,7 +61,8 @@ async function status(tabId) {
 export async function siteStatuses() {
   const out = {};
   for (const site of SITES) {
-    const tabs = await chrome.tabs.query({ url: site.match });
+    // Only tabs on the chat page itself (a Cursor dashboard tab, say, has no message box).
+    const tabs = (await chrome.tabs.query({ url: site.match })).filter((t) => t.url?.startsWith(site.home));
     let s = null;
     for (const t of tabs) {
       s = await status(t.id);
@@ -92,6 +93,11 @@ export function tabAgent(site, { onProgress } = {}) {
         const tab = await ownedTab(site);
         await chrome.tabs.update(tab.id, { url: site.newChat });
         await waitLoaded(tab.id);
+        // Signed-out visitors get redirected to a login page on another host.
+        const loaded = await chrome.tabs.get(tab.id);
+        if (!new URL(loaded.url).hostname.endsWith(new URL(site.home).hostname)) {
+          throw new Error(`sign in to ${site.via ?? site.name} in its tab, then try again`);
+        }
         const end = Date.now() + 30_000;
         let s = null;
         while (Date.now() < end) {
@@ -100,7 +106,7 @@ export function tabAgent(site, { onProgress } = {}) {
           await sleep(500);
         }
         if (!s) throw new Error(`couldn't reach the ${site.name} page`);
-        if (s.loggedIn === false) throw new Error(`sign in to ${site.name} in its tab, then try again`);
+        if (s.loggedIn === false) throw new Error(`sign in to ${site.via ?? site.name} in its tab, then try again`);
         if (!s.ready) throw new Error(`couldn't find ${site.name}'s message box; the site may have changed. Switch to copy & paste mode`);
 
         return new Promise((resolve, reject) => {
@@ -119,7 +125,7 @@ export function tabAgent(site, { onProgress } = {}) {
             else if (m.type === "error") finish(reject, new Error(`${site.name}: ${m.error}`));
           });
           port.onDisconnect.addListener(() => finish(reject, new Error(`the ${site.name} tab was closed or reloaded`)));
-          port.postMessage({ type: "ask", prompt: withSystem(prompt, opts.system) });
+          port.postMessage({ type: "ask", prompt: withSystem(prompt, opts.system), model: site.model });
         });
       });
     },

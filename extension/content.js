@@ -1,4 +1,4 @@
-// battler content script: runs inside chatgpt.com, claude.ai and grok.com tabs and does what a
+// battler content script: runs inside chatgpt.com, claude.ai and cursor.com/agents tabs and does what a
 // person would do: type the prompt, press send, wait for the reply to finish, and read it back.
 // It only acts when the battler side panel asks it to, one message at a time.
 //
@@ -33,17 +33,18 @@
       streamingAttr: "data-is-streaming",
       loggedOut: ["a[href='/login']", "button[data-testid='login-with-google']"],
     },
-    "grok.com": {
-      // Checked 2026-09-30 (signed out): composer is a textarea "Ask Grok anything", submit is
-      // [data-testid=chat-submit]. Signed-out visitors can type too, so "Sign in" in the header is
-      // what tells us the account isn't connected. Reply markup still to be checked signed in.
-      composer: ["textarea[aria-label*='Grok' i]", "div.ProseMirror[contenteditable='true']", "form textarea"],
-      send: ["button[data-testid='chat-submit']", "button[type='submit'][aria-label*='Submit' i]", "form button[type='submit']"],
-      stop: ["button[aria-label*='Stop' i]"],
-      replies: ["[data-testid='assistant-message']", ".message-bubble:not(.user)", "[class*='message-bubble']"],
-      replyBody: [".response-content-markdown", ".prose", ":scope"],
-      loggedOut: ["a[href*='sign-in']"],
-      loggedOutText: /^sign in$/i,
+    "cursor.com": {
+      // Checked 2026-09-30 on cursor.com/agents (Grok via Cursor): a contenteditable composer, a
+      // model menu, and replies rendered in .portal-markdown-root. The Stop button stays until
+      // the cloud environment finishes starting, 20-40s after the answer.
+      composer: ["[contenteditable='true'].chat-input-text-base", "form [contenteditable='true']"],
+      send: ["button[aria-label='Send message']", "form button[type='submit']"],
+      stop: ["button[aria-label='Stop']"],
+      replies: [".portal-markdown-root"],
+      replyBody: [":scope"],
+      loggedOut: ["a[href*='authenticator.cursor.sh']"],
+      modelPicker: "[data-testid='background-composer-model-picker-trigger']",
+      modelItem: (model) => `[data-testid='model-item-${model}']`,
     },
   };
 
@@ -85,7 +86,7 @@
   }
 
   /** Put text into the site's composer the way a paste would, so its editor state updates. */
-  function insert(el, text) {
+  async function insert(el, text) {
     el.focus();
     if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
       const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), "value").set;
@@ -93,12 +94,32 @@
       el.dispatchEvent(new Event("input", { bubbles: true }));
       return;
     }
-    // Rich editors (ProseMirror, Lexical) handle paste events best.
+    // Rich editors (ProseMirror, Lexical, tiptap) handle paste events best. Some apply the paste a
+    // moment later, so wait before deciding it didn't work, or the text ends up in there twice.
     const data = new DataTransfer();
     data.setData("text/plain", text);
-    const pasted = el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
-    if (pasted && !el.textContent.trim()) document.execCommand("insertText", false, text);
+    el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+    await sleep(350);
     if (!el.textContent.trim()) document.execCommand("insertText", false, text);
+  }
+
+  /** Pick a model in the site's model menu, if it has one and it isn't already chosen. */
+  async function chooseModel(model) {
+    if (!driver.modelPicker || !model) return;
+    const trigger = await waitFor(() => first([driver.modelPicker]), { timeout: 15_000, what: "the model menu" });
+    trigger.click();
+    const item = await waitFor(() => first([driver.modelItem(model)]), { timeout: 5_000, what: `the model ${model}` }).catch(() => null);
+    if (!item) {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      throw new Error(`${model} isn't in the model menu`);
+    }
+    item.click();
+    await sleep(300);
+    // The menu can stay open with its search box focused; close it so typing goes to the composer.
+    if (visible(document.querySelector(driver.modelItem(model)))) {
+      document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true }));
+      await sleep(200);
+    }
   }
 
   /** The reply's content element (":scope" means the reply element itself), as Markdown. */
@@ -113,11 +134,13 @@
     return false;
   }
 
-  async function ask(prompt, progress) {
-    const composer = await waitFor(() => first(driver.composer), { timeout: 30_000, what: "the message box" });
+  async function ask(prompt, progress, model) {
+    await waitFor(() => first(driver.composer), { timeout: 30_000, what: "the message box" });
+    await chooseModel(model);
+    const composer = await waitFor(() => first(driver.composer), { timeout: 10_000, what: "the message box" });
     const before = all(driver.replies).length;
-    insert(composer, prompt);
-    await sleep(300);
+    await insert(composer, prompt);
+    await sleep(200);
 
     const send = await waitFor(() => {
       const b = first(driver.send);
@@ -227,7 +250,7 @@
       if (busy) return port.postMessage({ type: "error", error: "this tab is already answering another prompt" });
       busy = true;
       try {
-        const text = await ask(msg.prompt, (chars) => port.postMessage({ type: "progress", chars }));
+        const text = await ask(msg.prompt, (chars) => port.postMessage({ type: "progress", chars }), msg.model);
         port.postMessage({ type: "done", text });
       } catch (e) {
         port.postMessage({ type: "error", error: e.message, status: status() });
