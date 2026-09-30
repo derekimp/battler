@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Typecheck and test (macOS, Node 24)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - name: Test the built CLI
+        run: npm run test:dist
+
+  oldest-node:
+    name: Built CLI on the oldest supported Node (22)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Smoke test with fake CLIs
+        run: sh test/smoke.sh
+
+  package:
+    name: Package contents
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - name: Install the packed tarball globally and run it
+        run: |
+          npm pack
+          npm install -g ./battler-*.tgz
+          PATH="$PWD/test/fixtures/bin:$PATH" battler --doctor

@@ -1,12 +1,23 @@
+import { CRITERIA, CRITERIA_HELP, type Length } from "./verdict.ts";
+
 export const DEBATER_SYSTEM = `You are one of several AI debaters taking part in a structured debate. \
 Argue from your own best judgment: be concrete, cite evidence or reasoning, and state your \
 confidence. Do not use tools, do not read or write files, and do not ask clarifying questions; \
-if the topic is ambiguous, state the interpretation you are using and proceed. Answer in Markdown.`;
+if the topic is ambiguous, state the interpretation you are using and proceed. Debaters are \
+anonymous: never say which AI model, assistant or company you are. Answer in Markdown.`;
 
 export const JUDGE_SYSTEM = `You are an impartial judge consolidating a multi-AI debate. \
-You judge arguments on their merits, not on who made them. Do not use tools. Answer in Markdown.`;
+You judge arguments on their merits, not on who made them. Do not use tools. \
+You reply with a single JSON object and nothing else.`;
 
-export function openingPrompt(topic: string): string {
+/** Word budgets per round. Shorter battles are also noticeably faster. */
+const BUDGET: Record<Length, { opening: number; debate: number }> = {
+  short: { opening: 150, debate: 200 },
+  medium: { opening: 350, debate: 450 },
+  long: { opening: 700, debate: 900 },
+};
+
+export function openingPrompt(topic: string, length: Length): string {
   return `DEBATE TOPIC:
 ${topic}
 
@@ -22,7 +33,7 @@ Where you might be wrong or what it depends on.
 ## Confidence
 A percentage and one line why.
 
-Keep it under 400 words.`;
+Keep it under ${BUDGET[length].opening} words.`;
 }
 
 export interface Position {
@@ -30,7 +41,7 @@ export interface Position {
   text: string;
 }
 
-export function debatePrompt(topic: string, round: number, own: string, others: Position[]): string {
+export function debatePrompt(topic: string, round: number, own: string, others: Position[], length: Length): string {
   const theirs = others.map((o) => `### ${o.label}\n${o.text}`).join("\n\n");
   return `DEBATE TOPIC:
 ${topic}
@@ -52,7 +63,7 @@ Do not just agree to be agreeable.
 
 Structure your answer as:
 ## Rebuttals
-For each other debater, the weakest point in their argument and why (name them).
+For each other debater, the weakest point in their argument and why. Refer to them by their full label, e.g. "Debater A".
 ## Concessions
 Points from others you now accept, if any.
 ## Revised position
@@ -60,10 +71,32 @@ Your updated answer, self-contained, as if it were the only thing a reader will 
 ## Confidence
 A percentage and one line on what changed.
 
-Keep it under 500 words.`;
+Keep it under ${BUDGET[length].debate} words.`;
 }
 
-export function judgePrompt(topic: string, history: { round: number; positions: Position[] }[]): string {
+const JUDGE_LIMITS: Record<Length, string> = {
+  short: `- "answer": at most 2 sentences.
+- "consensus": at most 3 items, each under 15 words.
+- "disagreements": at most 2, each view under 20 words.
+- scorecard "position", "strength", "weakness": under 10 words each.
+- "winner.reason": one sentence.`,
+  medium: `- "answer": one paragraph, at most 80 words.
+- "consensus": at most 5 items, each under 25 words.
+- "disagreements": at most 3, each view under 35 words.
+- scorecard "position", "strength", "weakness": under 18 words each.
+- "winner.reason": at most 2 sentences.`,
+  long: `- "answer": at most 220 words; use "\\n\\n" between paragraphs if helpful.
+- "consensus": at most 8 items, each under 40 words.
+- "disagreements": at most 5, each view under 60 words, with the strongest case for each side.
+- scorecard "position", "strength", "weakness": under 30 words each.
+- "winner.reason": at most 3 sentences.`,
+};
+
+export function judgePrompt(
+  topic: string,
+  history: { round: number; positions: Position[] }[],
+  length: Length,
+): string {
   const transcript = history
     .map(
       (r) =>
@@ -71,6 +104,7 @@ export function judgePrompt(topic: string, history: { round: number; positions: 
         r.positions.map((p) => `### ${p.label}\n${p.text}`).join("\n\n"),
     )
     .join("\n\n---\n\n");
+  const labels = history[0].positions.map((p) => `"${p.label}"`).join(", ");
   return `DEBATE TOPIC:
 ${topic}
 
@@ -78,16 +112,36 @@ Full transcript (debater identities are anonymised):
 
 ${transcript}
 
-Produce the consolidated result:
+Consolidate this debate. Reply with ONLY this JSON object, no code fence and no other text:
 
-## Answer
-The best-supported answer to the topic, in a short paragraph. This is what the user will read first.
-## Consensus
-Points all or most debaters ended up agreeing on.
-## Open disagreements
-Points still contested, with the strongest case on each side.
-## Scorecard
-A table: debater | final position (one line) | strongest contribution | biggest weakness | score out of 10.
-## Winner
-Which debater argued best and why, in two sentences. "Tie" is allowed.`;
+{
+  "answer": "The best-supported answer to the topic. This is what the reader sees first, so lead with the conclusion.",
+  "agreement": "strong" | "partial" | "split",
+  "consensus": ["Point all or most debaters ended up agreeing on", "..."],
+  "disagreements": [
+    { "point": "What is still contested",
+      "sides": [ { "debaters": ["Debater A"], "view": "Their strongest case" },
+                 { "debaters": ["Debater B", "Debater C"], "view": "..." } ] }
+  ],
+  "scorecard": [
+    { "debater": "Debater A", "position": "Final position", "strength": "Strongest contribution",
+      "weakness": "Biggest weakness",
+      "criteria": { ${CRITERIA.map((c) => `"${c}": 1-5`).join(", ")} } }
+  ],
+  "winner": { "debater": "Debater A" or "tie", "reason": "Why" }
+}
+
+Rules:
+- Refer to debaters only by their full labels (${labels}), never by a bare letter such as "B's".
+  Include every one of them in "scorecard".
+- Rate each debater on every criterion from 1 (poor) to 5 (excellent), judging their whole
+  performance with the most weight on their final position:
+${CRITERIA.map((c) => `  - ${c}: ${CRITERIA_HELP[c]}`).join("\n")}${
+    history.length === 1 ? "\n  This was a single round, so for engagement judge how well they anticipate counterarguments." : ""
+  }
+  Use the full range; do not give everyone 4s. "winner" should be the debater with the best ratings.
+- Base the answer on the debaters' final positions and the strength of their arguments, not on a vote.
+- "disagreements" may be empty if they fully converged.
+- Plain text inside strings; **bold** and \`code\` are allowed, no other Markdown, no tables.
+${JUDGE_LIMITS[length]}`;
 }

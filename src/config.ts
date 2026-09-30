@@ -8,7 +8,11 @@ export interface Config {
   agents?: string[];
   judge?: string;
   rounds?: number;
+  /** "short" | "medium" | "long" */
+  length?: string;
   out?: string;
+  /** Open the HTML report in the browser after each battle. */
+  open?: boolean;
   /** Model per debater, passed straight to that CLI, e.g. { "grok": "grok-4.7-high" }. */
   models?: Partial<Record<"claude" | "codex" | "grok", string>>;
 }

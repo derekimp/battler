@@ -1,19 +1,23 @@
 {
   "name": "battler",
   "version": "0.1.0",
-  "description": "Make your AI subscriptions (Claude, ChatGPT/Codex, Grok via Cursor) debate a topic and return a consolidated verdict.",
+  "description": "Make your AI subscriptions (Claude, ChatGPT, Grok) debate each other, then judge each other blind. No API keys.",
+  "author": "derekimp",
   "type": "module",
   "bin": {
     "battler": "./dist/cli.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "scripts": {
-    "build": "tsc",
-    "prepare": "tsc",
+    "build": "rm -rf dist && tsc && chmod +x dist/cli.js",
+    "prepare": "npm run build",
     "dev": "node src/cli.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc -p tsconfig.test.json",
+    "test": "node --test test/*.test.ts",
+    "test:dist": "npm run build && BATTLER_ENTRY=dist/cli.js node --test test/cli.test.ts",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
   },
   "license": "MIT",
   "files": [

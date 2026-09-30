@@ -23,7 +23,7 @@ const API_KEY_VARS = [
   "CURSOR_API_KEY",
 ];
 
-function subscriptionEnv(): NodeJS.ProcessEnv {
+export function subscriptionEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
   for (const k of API_KEY_VARS) delete env[k];
   return env;
@@ -83,7 +83,7 @@ function run(
  * These CLIs change often, so turn their raw errors into something a user can act on.
  * Long lines (cursor-agent prints every model it knows) are clipped.
  */
-function explain(cmd: string, raw: string): string {
+export function explain(cmd: string, raw: string): string {
   const detail = raw
     .trim()
     .split("\n")
@@ -189,14 +189,33 @@ export function codexAgent(model?: string): Agent {
 
 export const DEFAULT_GROK_MODEL = "grok-4.7-medium";
 
-export function cursorGrokAgent(model = DEFAULT_GROK_MODEL): Agent {
+/** Models used when Cursor stands in for a missing Claude Code or Codex CLI. */
+export const CURSOR_STAND_INS: Record<"claude" | "codex", string> = {
+  claude: "claude-sonnet-5-medium",
+  codex: "gpt-5.5-medium",
+};
+
+/** Display name for a Cursor model id, by model family. */
+export function familyName(model: string): string {
+  const m = model.toLowerCase();
+  if (/grok/.test(m)) return "Grok";
+  if (/claude|opus|sonnet|haiku|fable/.test(m)) return "Claude";
+  if (/gpt|codex|^o\d/.test(m)) return "GPT";
+  if (/gemini/.test(m)) return "Gemini";
+  if (/kimi/.test(m)) return "Kimi";
+  if (/composer/.test(m)) return "Composer";
+  return model;
+}
+
+/** Any model Cursor offers, run through the Cursor CLI on the Cursor subscription. */
+export function cursorAgent(model: string, opts: { id?: string; name?: string } = {}): Agent {
   return {
-    id: "grok",
-    name: "Grok",
-    async ask(prompt: string, opts: AskOptions = {}) {
+    id: opts.id ?? `cursor:${model}`,
+    name: opts.name ?? familyName(model),
+    async ask(prompt: string, askOpts: AskOptions = {}) {
       const args = ["-p", "--output-format", "json", "--mode", "ask", "--trust", "--model", model,
-        withSystem(prompt, opts.system)];
-      const r = await run("cursor-agent", args, { signal: opts.signal });
+        withSystem(prompt, askOpts.system)];
+      const r = await run("cursor-agent", args, { signal: askOpts.signal });
       let json: { result?: string; is_error?: boolean };
       try {
         json = JSON.parse(r.stdout.trim().split("\n").at(-1)!);
@@ -219,9 +238,13 @@ export function cursorGrokAgent(model = DEFAULT_GROK_MODEL): Agent {
   };
 }
 
+export function cursorGrokAgent(model = DEFAULT_GROK_MODEL): Agent {
+  return cursorAgent(model, { id: "grok", name: "Grok" });
+}
+
 export type AgentId = "claude" | "codex" | "grok";
 
-/** In the order they are preferred as judge. */
+/** The default line-up, in the order they are preferred as judge. */
 export const AGENT_IDS: AgentId[] = ["claude", "codex", "grok"];
 
 const FACTORIES: Record<AgentId, (model?: string) => Agent> = {
@@ -230,7 +253,7 @@ const FACTORIES: Record<AgentId, (model?: string) => Agent> = {
   grok: cursorGrokAgent,
 };
 
-const ALIASES: Record<string, AgentId> = { gpt: "codex", chatgpt: "codex", cursor: "grok" };
+const ALIASES: Record<string, AgentId> = { gpt: "codex", chatgpt: "codex" };
 
 export function resolveAgentId(name: string): AgentId | undefined {
   const n = name.trim().toLowerCase();
@@ -239,4 +262,20 @@ export function resolveAgentId(name: string): AgentId | undefined {
 
 export function createAgent(id: AgentId, model?: string): Agent {
   return FACTORIES[id](model);
+}
+
+/**
+ * Parse a debater spec: "claude", "codex:gpt-5.5", "grok:grok-4.7-high", or "cursor:<model>"
+ * for any model Cursor offers. `defaultModels` fills in a model the spec leaves out.
+ */
+export function agentFromSpec(spec: string, defaultModels: Partial<Record<AgentId, string>> = {}): Agent {
+  const [rawName, ...rest] = spec.trim().split(":");
+  const model = rest.join(":").trim() || undefined;
+  if (rawName.trim().toLowerCase() === "cursor") {
+    if (!model) throw new Error('"cursor" needs a model, e.g. cursor:claude-sonnet-5-medium (see `cursor-agent --list-models`)');
+    return cursorAgent(model);
+  }
+  const id = resolveAgentId(rawName);
+  if (!id) throw new Error(`unknown agent "${rawName}" (choose from ${AGENT_IDS.join(", ")}, or cursor:<model>)`);
+  return createAgent(id, model ?? defaultModels[id]);
 }

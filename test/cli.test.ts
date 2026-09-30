@@ -1,0 +1,168 @@
+// End-to-end: the real CLI entry point, driving the fake claude / codex / cursor-agent binaries.
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { test } from "node:test";
+import { FAKE_BIN, ROOT } from "./helpers.ts";
+
+// BATTLER_ENTRY lets CI run the same tests against the built dist/cli.js.
+const ENTRY = resolve(ROOT, process.env.BATTLER_ENTRY ?? "src/cli.ts");
+
+function battler(args: string[], env: Record<string, string> = {}, input?: string) {
+  const dir = mkdtempSync(join(tmpdir(), "battler-cli-"));
+  const r = spawnSync(process.execPath, [ENTRY, ...args], {
+    cwd: dir,
+    input,
+    encoding: "utf8",
+    env: {
+      PATH: `${FAKE_BIN}:${process.env.PATH}`,
+      HOME: dir,
+      XDG_CONFIG_HOME: join(dir, "config"),
+      NO_COLOR: "1",
+      ...env,
+    },
+  });
+  return { ...r, dir };
+}
+
+test("--json runs a full battle and saves a transcript", () => {
+  const r = battler(["--json", "-s", "Tabs or spaces?"]);
+  assert.equal(r.status, 0, r.stderr);
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.topic, "Tabs or spaces?");
+  assert.equal(out.length, "short");
+  assert.match(out.verdict.answer, /^Consolidated answer by claude/);
+  assert.equal(out.verdict.scorecard.length, 3);
+  for (const s of out.verdict.scorecard) assert.match(s.debater, /^(Claude|GPT|Grok)$/);
+  assert.ok(existsSync(out.transcript));
+  const report = readFileSync(out.transcript, "utf8");
+  assert.match(report, /# Transcript/);
+  assert.doesNotMatch(report, /Debater [ABC]\b(?!\/)/, "names are revealed in the report");
+});
+
+test("piped stdout gets Markdown; progress goes to stderr", () => {
+  const r = battler(["Tabs or spaces?"]);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /^## Answer\n/);
+  assert.match(r.stdout, /## Scorecard/);
+  assert.match(r.stderr, /Round 1\/2 · Opening statements/);
+  assert.match(r.stderr, /Round 2\/2/);
+  assert.match(r.stderr, /Report: battles\/.*\.html/);
+  assert.deepEqual(readdirSync(join(r.dir, "battles")).map((f) => f.split(".").pop()).sort(), ["html", "md"]);
+});
+
+test("topic can come from stdin", () => {
+  const r = battler(["--json", "-s"], {}, "Vim or Emacs?\n");
+  assert.equal(JSON.parse(r.stdout).topic, "Vim or Emacs?");
+});
+
+test("a missing CLI is skipped, and Cursor stands in for it", () => {
+  const bin = mkdtempSync(join(tmpdir(), "bin-"));
+  // A PATH with only claude and cursor-agent: no codex.
+  for (const n of ["claude", "cursor-agent"]) writeFileSync(join(bin, n), `#!/bin/sh\nexec "${FAKE_BIN}/${n}" "$@"\n`, { mode: 0o755 });
+  const r = battler(["--json", "-s", "Q?"], { PATH: `${bin}:/usr/bin:/bin:${process.execPath.replace(/\/node$/, "")}` });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stderr, /GPT's own CLI isn't ready .* GPT \(via Cursor\) is standing in/);
+  const names = JSON.parse(r.stdout).verdict.scorecard.map((s: { debater: string }) => s.debater).sort();
+  assert.deepEqual(names, ["Claude", "GPT (via Cursor)", "Grok"]);
+});
+
+test("explicit agents and judge, with models", () => {
+  const log = join(mkdtempSync(join(tmpdir(), "log-")), "calls.jsonl");
+  const r = battler(["--json", "-s", "-a", "codex:gpt-5.5,grok:grok-4.7-low", "-j", "grok", "Q?"], { FAKE_LOG: log });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(JSON.parse(r.stdout).verdict.answer, /by cursor\[grok-4\.7-medium\]/, "judge uses its own default model");
+  const clis = readFileSync(log, "utf8").trim().split("\n").map((l) => JSON.parse(l).cli);
+  assert.ok(!clis.includes("claude"), "claude was not used");
+});
+
+test("config file sets defaults; flags override it", () => {
+  const dir = mkdtempSync(join(tmpdir(), "cfg-"));
+  mkdirSync(join(dir, "battler"));
+  writeFileSync(join(dir, "battler", "config.json"), JSON.stringify({ agents: ["claude", "codex"], length: "long", rounds: 1 }));
+  const r = battler(["--json", "Q?"], { XDG_CONFIG_HOME: dir });
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.length, "long");
+  assert.equal(out.verdict.scorecard.length, 2);
+  assert.match(r.stderr, /1 round · judged by a panel: Claude and GPT/);
+  assert.equal(JSON.parse(battler(["--json", "-s", "Q?"], { XDG_CONFIG_HOME: dir }).stdout).length, "short");
+});
+
+test("a debater that fails mid-battle is dropped, the rest finish", () => {
+  const r = battler(["--json", "-s", "Q?"], { FAKE_FAIL: "codex" });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stderr, /✗ GPT .*codex exited with code 2/);
+  assert.equal(JSON.parse(r.stdout).verdict.scorecard.length, 2);
+});
+
+test("--doctor", () => {
+  const ok = battler(["--doctor"]);
+  assert.equal(ok.status, 0);
+  assert.match(ok.stderr, /✓ Claude .*ready[\s\S]*✓ GPT .*ready[\s\S]*✓ Grok .*ready[\s\S]*3 of 3 ready/);
+  const bad = battler(["--doctor"], { FAKE_LOGGED_OUT: "claude,cursor-agent" });
+  assert.equal(bad.status, 1);
+  assert.match(bad.stderr, /✗ Claude .*not logged in/);
+});
+
+test("bad input is rejected with a clear message", () => {
+  const cases: [string[], RegExp][] = [
+    [[], /no topic given/],
+    [["-r", "9", "Q"], /--rounds must be 1-5/],
+    [["-l", "huge", "Q"], /--length must be one of short, medium, long/],
+    [["-a", "claude", "Q"], /at least 2 debaters/],
+    [["-a", "claude,claude", "Q"], /only appear once/],
+    [["-a", "claude,bard", "Q"], /unknown agent "bard"/],
+    [["-j", "cursor", "Q"], /needs a model/],
+  ];
+  for (const [args, message] of cases) {
+    const r = battler(args, {}, "");
+    assert.equal(r.status, 1, args.join(" "));
+    assert.match(r.stderr, message, args.join(" "));
+  }
+});
+
+test("an invalid config file is reported", () => {
+  const dir = mkdtempSync(join(tmpdir(), "cfg-"));
+  mkdirSync(join(dir, "battler"));
+  writeFileSync(join(dir, "battler", "config.json"), "{ nope");
+  const r = battler(["Q?"], { XDG_CONFIG_HOME: dir });
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /invalid config at .*config\.json/);
+});
+
+test("medium battles are judged by a panel by default; short by one judge; -j overrides", () => {
+  const medium = battler(["--json", "Q?"]);
+  assert.equal(medium.status, 0, medium.stderr);
+  const v = JSON.parse(medium.stdout).verdict;
+  assert.deepEqual(v.panel, { judges: ["Claude", "GPT", "Grok"], selfScoringExcluded: true });
+  assert.equal(v.winner.voters, 3);
+  assert.ok(v.scorecard.every((s: { criteria?: object }) => s.criteria), "checklist ratings are included");
+  assert.match(medium.stderr, /Verdict · judge panel/);
+
+  const short = JSON.parse(battler(["--json", "-s", "Q?"]).stdout).verdict;
+  assert.equal(short.panel, undefined);
+
+  const single = battler(["--json", "-j", "codex", "Q?"]);
+  assert.match(JSON.parse(single.stdout).verdict.answer, /by codex/);
+  assert.match(single.stderr, /judged by GPT/);
+
+  const panelShort = battler(["--json", "-s", "-j", "panel", "Q?"]);
+  assert.equal(JSON.parse(panelShort.stdout).verdict.panel.judges.length, 3);
+});
+
+test("the terminal verdict shows votes and the panel note", () => {
+  const r = battler(["Q?"]);
+  assert.match(r.stdout, /\*\*(Claude|GPT|Grok) wins \(top score · first choice of 2 of 3 judges\)\.\*\*/);
+  assert.match(r.stdout, /Scored by Claude, GPT and Grok; no judge scored itself/);
+  assert.match(r.stdout, /\| Debater \| Score \| Accuracy \| Reasoning \| Engagement \| Calibration \|/);
+});
+
+test("every battle also writes an HTML report next to the Markdown", () => {
+  const r = battler(["--json", "-s", "Q?"]);
+  const out = JSON.parse(r.stdout);
+  assert.equal(out.report, out.transcript.replace(/\.md$/, ".html"));
+  assert.match(readFileSync(out.report, "utf8"), /<h1>Q\?<\/h1>/);
+  assert.match(r.stderr, /add --open to view it in your browser/);
+});
