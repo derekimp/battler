@@ -50,3 +50,39 @@ test("formatDuration", () => {
   assert.equal(formatDuration(5_400), "5s");
   assert.equal(formatDuration(68_000), "1m 08s");
 });
+
+test("CJK characters are two columns wide", () => {
+  assert.equal(visibleWidth("可以做"), 6);
+  assert.equal(visibleWidth("AI路径"), 6);
+  assert.equal(visibleWidth("\x1b[1m机构\x1b[22m ok"), 7);
+  assert.equal(visibleWidth("é"), 1, "combining marks take no space");
+  assert.equal(visibleWidth("👍"), 2);
+});
+
+test("truncate cuts by columns, so live progress rows never wrap", () => {
+  const t = truncate("机构可以做，定位是 AI 相关路径规划，不是保送", 20);
+  assert.equal(t, "机构可以做，定位是…");
+  assert.ok(visibleWidth(t) <= 20);
+  for (let w = 2; w < 40; w++) assert.ok(visibleWidth(truncate("中文和English混合的一行很长的文字", w)) <= w, `width ${w}`);
+});
+
+test("wrap breaks Chinese text between characters, within the width", () => {
+  const text = "可以做，但应定位为“AI相关升学与职业路径规划”，而不是把“CS是进入AI的最好门票”当作口号。**信任**应来自可核对的信息。";
+  for (const w of [10, 17, 30, 61]) {
+    const lines = wrap(text, w);
+    for (const l of lines) assert.ok(visibleWidth(l.replace(/\*\*|`/g, "")) <= w, `"${l}" > ${w}`);
+    assert.equal(lines.join(""), text.replace(/\s+/g, ""), "nothing is lost or added");
+  }
+});
+
+test("a line never starts with closing punctuation", () => {
+  // Width 6 fits exactly three characters, so "，" would land at the start of line 2.
+  const lines = wrap("可以做，但是", 6);
+  assert.ok(lines.every((l) => !/^[，。]/.test(l)), JSON.stringify(lines));
+  assert.equal(lines.join(""), "可以做，但是");
+});
+
+test("mixed English and Chinese keeps the spaces English needs", () => {
+  assert.deepEqual(wrap("Use spaces 而不是 tabs", 40), ["Use spaces 而不是 tabs"]);
+  assert.deepEqual(wrap("hello world", 5), ["hello", "world"]);
+});

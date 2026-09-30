@@ -12,3 +12,5 @@ First public version.
 - Live terminal progress, a styled verdict, and a web report (`--open`) with each round side by side.
 - `battler setup` wizard and interactive mode.
 - Markdown and `--json` output for scripts.
+- Chinese, Japanese and Korean topics render correctly in the terminal (double-width characters, line breaks without spaces).
+- If Codex defaults to a model a ChatGPT login can't use, battler falls back to one it can.

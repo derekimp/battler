@@ -1,6 +1,6 @@
 import type { BattleEvent } from "../core/types.ts";
 import { revealNames } from "../core/verdict.ts";
-import { debaterColor, formatDuration, plainPreview, style, termWidth, truncate } from "./term.ts";
+import { debaterColor, formatDuration, plainPreview, style, termWidth, truncate, wrap } from "./term.ts";
 
 const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
@@ -39,7 +39,7 @@ export class Progress {
     this.print("");
     for (const s of opts.skipped) this.print(`  ${st.yellow("!")} ${st.dim(s)}`);
     this.print(`  ${vs}`);
-    for (const line of wrapPlain(opts.topic, w - 4)) this.print(`  ${st.bold(line)}`);
+    for (const line of wrap(opts.topic.replace(/\*\*|`/g, ""), w - 4)) this.print(`  ${st.bold(line)}`);
     this.print(st.dim(`  ${opts.length} · ${opts.rounds} round${opts.rounds > 1 ? "s" : ""} · judged by ${describeJudges(opts.judges)}`));
     if (this.live) {
       this.out.write("\x1b[?25l"); // hide cursor while redrawing
@@ -143,16 +143,6 @@ export class Progress {
   }
 }
 
-function wrapPlain(text: string, width: number): string[] {
-  const lines: string[] = [];
-  let line = "";
-  for (const word of text.split(/\s+/).filter(Boolean)) {
-    if (line && line.length + 1 + word.length > width) lines.push(line), (line = word);
-    else line = line ? `${line} ${word}` : word;
-  }
-  if (line) lines.push(line);
-  return lines;
-}
 
 /** "Claude", or "a panel: Claude, GPT and Grok". */
 export function describeJudges(judges: string[]): string {

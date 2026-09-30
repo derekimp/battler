@@ -37,12 +37,41 @@ const DEBATER_COLORS: Record<string, number> = { Claude: 173, GPT: 78, Grok: 111
 export const debaterColor = (name: string) => DEBATER_COLORS[name.replace(/\s*\(.*\)$/, "")] ?? 250;
 
 const ANSI = /\x1b\[[0-9;]*m/g;
-export const visibleWidth = (s: string) => [...s.replace(ANSI, "")].length;
 
+// Characters a terminal draws two columns wide: CJK ideographs, kana, hangul, fullwidth forms,
+// CJK punctuation and most emoji.
+const WIDE = "\\u1100-\\u115F\\u2E80-\\u303E\\u3041-\\u33FF\\u3400-\\u4DBF\\u4E00-\\u9FFF\\uA000-\\uA4CF\\uAC00-\\uD7A3\\uF900-\\uFAFF\\uFE30-\\uFE4F\\uFF00-\\uFF60\\uFFE0-\\uFFE6\\u{1F300}-\\u{1F64F}\\u{1F900}-\\u{1F9FF}\\u{20000}-\\u{3FFFD}";
+const WIDE_CHAR = new RegExp(`[${WIDE}]`, "u");
+const ZERO_WIDTH = /[\u0300-\u036F\u200B-\u200F\uFE00-\uFE0F]/u;
+
+/** Columns one character takes in a terminal. */
+export function charWidth(ch: string): number {
+  if (ZERO_WIDTH.test(ch)) return 0;
+  return WIDE_CHAR.test(ch) ? 2 : 1;
+}
+
+const textWidth = (s: string) => {
+  let w = 0;
+  for (const ch of s) w += charWidth(ch);
+  return w;
+};
+
+/** Columns a string takes on screen, ignoring ANSI color codes. */
+export const visibleWidth = (s: string) => textWidth(s.replace(ANSI, ""));
+
+/** Cut plain text to at most `width` columns, ending in "…" if anything was cut. */
 export function truncate(s: string, width: number): string {
-  const chars = [...s];
-  if (chars.length <= width) return s;
-  return width <= 1 ? "…".slice(0, width) : chars.slice(0, width - 1).join("").trimEnd() + "…";
+  if (textWidth(s) <= width) return s;
+  if (width <= 1) return "…".slice(0, width);
+  let out = "";
+  let w = 0;
+  for (const ch of s) {
+    const cw = charWidth(ch);
+    if (w + cw > width - 1) break;
+    out += ch;
+    w += cw;
+  }
+  return out.trimEnd() + "…";
 }
 
 /**
@@ -62,9 +91,32 @@ export function plainPreview(markdown: string): string {
 }
 
 /** Width of text as it will render, i.e. without the ** and ` markers. */
-const markupWidth = (s: string) => [...s.replace(/\*\*|`/g, "")].length;
+const markupWidth = (s: string) => textWidth(s.replace(/\*\*|`/g, ""));
 
-/** Word-wrap text that may contain **bold** / `code` markers. Paragraph breaks are kept. */
+/** Split `s` so the head is at most `width` columns (markers count as zero). */
+function splitAtWidth(s: string, width: number): [string, string] {
+  let w = 0;
+  let i = 0;
+  const chars = [...s];
+  for (; i < chars.length; i++) {
+    const ch = chars[i];
+    const cw = ch === "`" || (ch === "*" && (chars[i + 1] === "*" || chars[i - 1] === "*")) ? 0 : charWidth(ch);
+    if (w + cw > width) break;
+    w += cw;
+  }
+  return [chars.slice(0, Math.max(1, i)).join(""), chars.slice(Math.max(1, i)).join("")];
+}
+
+// Tokens: whitespace, a single wide character (lines may break between CJK characters), or a
+// run of anything else (a word).
+const TOKEN = new RegExp(`\\s+|[${WIDE}]|[^\\s${WIDE}]+`, "gu");
+// CJK and Western closing punctuation must not start a line.
+const NO_LINE_START = /^[，。、：；！？）」』】》〉,.!?;:)\]}%]/u;
+
+/**
+ * Word-wrap text that may contain **bold** / `code` markers to `width` columns. Paragraph breaks
+ * are kept. Handles CJK text, which is double width and has no spaces between words.
+ */
 export function wrap(text: string, width: number): string[] {
   const out: string[] = [];
   for (const para of text.split(/\n/)) {
@@ -73,18 +125,43 @@ export function wrap(text: string, width: number): string[] {
       continue;
     }
     let line = "";
-    for (let word of para.split(/\s+/).filter(Boolean)) {
-      while (markupWidth(word) > width) {
-        // Hard-break words longer than a whole line (URLs, paths).
-        if (line) out.push(line), (line = "");
-        out.push(word.slice(0, width));
-        word = word.slice(width);
+    let space = false;
+    const flush = () => {
+      if (line) out.push(line);
+      line = "";
+      space = false;
+    };
+    for (let tok of para.match(TOKEN) ?? []) {
+      if (/^\s+$/.test(tok)) {
+        space = line.length > 0;
+        continue;
       }
-      if (!line) line = word;
-      else if (markupWidth(line) + 1 + markupWidth(word) <= width) line += " " + word;
-      else out.push(line), (line = word);
+      // Words longer than a whole line (URLs, paths) are hard-broken.
+      while (markupWidth(tok) > width) {
+        flush();
+        const [head, rest] = splitAtWidth(tok, width);
+        out.push(head);
+        tok = rest;
+      }
+      const sep = space && line ? " " : "";
+      if (line && markupWidth(line) + sep.length + markupWidth(tok) > width) {
+        if (!sep && NO_LINE_START.test(tok)) {
+          // Carry the previous character down so the punctuation isn't alone at the start.
+          const chars = [...line];
+          const carried = chars.pop()!;
+          line = chars.join("");
+          flush();
+          line = carried + tok;
+          continue;
+        }
+        flush();
+        line = tok;
+        continue;
+      }
+      line += sep + tok;
+      space = false;
     }
-    if (line) out.push(line);
+    flush();
   }
   return out;
 }

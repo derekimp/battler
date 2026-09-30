@@ -11,7 +11,7 @@ import { renderReport, renderVerdictMarkdown } from "./core/report.ts";
 import type { Agent } from "./core/types.ts";
 import { LENGTHS, namedVerdict, type Length } from "./core/verdict.ts";
 import { Progress } from "./ui/progress.ts";
-import { debaterColor, formatDuration, style, termWidth } from "./ui/term.ts";
+import { debaterColor, formatDuration, style, termWidth, truncate } from "./ui/term.ts";
 import { renderHtmlReport } from "./ui/html-report.ts";
 import { renderVerdict } from "./ui/verdict-view.ts";
 import { autoLineup, defaultJudge, explicitLineup } from "./lineup.ts";
@@ -206,7 +206,10 @@ async function main() {
 
   const outDir = resolve((values.out ?? config.out ?? "battles").replace(/^~(?=$|\/)/, homedir()));
   mkdirSync(outDir, { recursive: true });
-  const slug = topic.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 50) || "battle";
+  // Keep letters in any script (a Chinese topic keeps its Chinese), about 40 columns wide.
+  const slug =
+    truncate(topic.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, ""), 41).replace(/…$/, "").replace(/-$/, "") ||
+    "battle";
   const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
   const file = join(outDir, `${stamp}-${slug}.md`);
   writeFileSync(file, renderReport(result));
@@ -217,7 +220,8 @@ async function main() {
   const openIt = values.open ?? config.open ?? false;
   progress.finish(
     `Done in ${formatDuration(Date.now() - started)}`,
-    `Report: ${display(htmlFile)}${openIt ? " (opening in your browser)" : "   (add --open to view it in your browser)"}`,
+    `Report: ${display(htmlFile)}`,
+    openIt ? "Opening it in your browser." : "Add --open to view it in your browser.",
   );
   if (openIt) spawn("open", [htmlFile], { stdio: "ignore", detached: true }).on("error", () => {}).unref();
 

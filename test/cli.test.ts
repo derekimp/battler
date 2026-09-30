@@ -164,5 +164,12 @@ test("every battle also writes an HTML report next to the Markdown", () => {
   const out = JSON.parse(r.stdout);
   assert.equal(out.report, out.transcript.replace(/\.md$/, ".html"));
   assert.match(readFileSync(out.report, "utf8"), /<h1>Q\?<\/h1>/);
-  assert.match(r.stderr, /add --open to view it in your browser/);
+  assert.match(r.stderr, /Report: .*\.html\n\s+Add --open to view it in your browser\./);
+});
+
+test("report file names keep non-English topics", () => {
+  const out = JSON.parse(battler(["--json", "-s", "留学机构做AI方向可以吗？"]).stdout);
+  assert.match(out.report, /-留学机构做ai方向可以吗\.html$/);
+  const long = JSON.parse(battler(["--json", "-s", "现在开一个美澳留学机构，专注AI及相关项目申请，从帮家长学生建立信任"]).stdout);
+  assert.match(long.report, /\d-现在开一个美澳留学机构-专注ai及相关项目\.html$/, "long CJK names are capped by width");
 });

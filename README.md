@@ -10,6 +10,11 @@ disagree, and who argued best.
 No API keys and no per-token bills. battler drives the official command-line tools you're already
 signed in to, so every call uses the subscriptions you already pay for.
 
+![battler running a short battle: Claude, GPT and Grok debate "Is a hot dog a sandwich?" and Grok wins](docs/demo.gif)
+
+<details>
+<summary>What a medium battle prints</summary>
+
 ```
 $ battler "Should startups use microservices from day one?"
 
@@ -65,6 +70,8 @@ $ battler "Should startups use microservices from day one?"
 
   Report: battles/2026-09-29-should-startups-use-microservices.html
 ```
+
+</details>
 
 In a real terminal each debater has its own color, and progress updates live with spinners and timers.
 
