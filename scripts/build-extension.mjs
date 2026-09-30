@@ -26,4 +26,7 @@ for (const f of LIB) {
 }
 const { REPORT_CSS } = await import(join(root, "dist", "ui", "html-report.js"));
 writeFileSync(join(out, "lib", "report.css"), REPORT_CSS());
-console.log(`Extension ready: ${out}\nLoad it at chrome://extensions → Developer mode → Load unpacked.`);
+// Also fill extension/lib (git-ignored), so loading the source folder itself works too.
+rmSync(join(root, "extension", "lib"), { recursive: true, force: true });
+cpSync(join(out, "lib"), join(root, "extension", "lib"), { recursive: true });
+console.log(`Extension ready: ${out} (extension/ works too)\nLoad it at chrome://extensions → Developer mode → Load unpacked.`);

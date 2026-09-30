@@ -493,6 +493,12 @@ $("#home").addEventListener("click", renderNew);
 $("#tab-new").addEventListener("click", renderNew);
 $("#tab-history").addEventListener("click", renderHistory);
 
-await loadPrefs();
-renderNew();
-refreshStatuses();
+try {
+  await loadPrefs();
+  renderNew();
+  view.dataset.started = "1";
+  refreshStatuses().catch((e) => toast(`Couldn't check the sites: ${e.message}`));
+} catch (e) {
+  view.innerHTML = `<section class="card error-card" style="margin-top:14px"><h2 style="color:var(--red)">battler couldn't start</h2><pre>${esc(e.stack ?? e.message)}</pre></section>`;
+  view.dataset.started = "1";
+}
