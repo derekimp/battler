@@ -6,6 +6,7 @@ import { escapeHtml, inlineHtml, markdownToHtml } from "./markdown.ts";
 const FAMILY_COLORS: Record<string, string> = {
   Claude: "#d97757",
   GPT: "#1fa67a",
+  ChatGPT: "#1fa67a",
   Grok: "#5b8def",
   Gemini: "#9b72f2",
   Kimi: "#14b8c4",

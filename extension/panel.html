@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>battler</title>
+<link rel="stylesheet" href="lib/report.css">
+<link rel="stylesheet" href="panel.css">
+</head>
+<body>
+<header class="topbar">
+  <button class="logo" id="home" aria-label="New battle"><span class="logo-mark" aria-hidden="true"><i></i><i></i></span>battler</button>
+  <nav class="tabs" aria-label="Sections">
+    <button id="tab-new" aria-current="page">New</button>
+    <button id="tab-history">History</button>
+  </nav>
+</header>
+<main id="view" tabindex="-1"></main>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<script type="module" src="panel.js"></script>
+</body>
+</html>
