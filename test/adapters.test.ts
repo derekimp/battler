@@ -96,7 +96,8 @@ test("agentFromSpec understands names, aliases, models and cursor:<model>", () =
   const cursor = agentFromSpec("cursor:claude-sonnet-5-medium");
   assert.deepEqual([cursor.id, cursor.name], ["cursor:claude-sonnet-5-medium", "Claude"]);
   assert.throws(() => agentFromSpec("cursor"), /needs a model/);
-  assert.throws(() => agentFromSpec("gemini"), /unknown agent "gemini"/);
+  assert.equal(agentFromSpec("gemini:gemini-3-pro").spec, "gemini:gemini-3-pro");
+  assert.throws(() => agentFromSpec("bard"), /unknown agent "bard"/);
 });
 
 test("spec models beat config models", async () => {
@@ -158,4 +159,28 @@ test("which Cursor allowance a model uses", async () => {
   assert.equal(cursorQuota(DEFAULT_GROK_MODEL), "Cursor Models", "the default Grok uses the roomy allowance");
   assert.equal(cursorModelOf(cursorGrokAgent()), DEFAULT_GROK_MODEL);
   assert.equal(cursorModelOf(claudeAgent()), undefined);
+});
+
+test("Gemini: answers in plan (read-only) mode, never sees API keys, and checks for a Google login", async () => {
+  const { geminiAgent } = await import("../src/adapters/cli-agents.ts");
+  const { mkdirSync, writeFileSync } = await import("node:fs");
+  process.env.PATH = `${FAKE_BIN}-gemini:${FAKE_BIN}:${saved.PATH}`;
+  process.env.GEMINI_API_KEY = "AIza-test";
+  process.env.GOOGLE_API_KEY = "AIza-test";
+  assert.match(await geminiAgent("gemini-3-pro").ask("hi"), /gemini\[gemini-3-pro\] opening/);
+  assert.doesNotMatch(await geminiAgent().ask("hi"), /LEAKED/);
+  const call = calls().find((c) => c.cli === "gemini")!;
+  assert.deepEqual(call.args.slice(2, 7), ["-o", "json", "--approval-mode", "plan", "--skip-trust"]);
+
+  const home = mkdtempSync(join(tmpdir(), "gemini-home-"));
+  process.env.BATTLER_GEMINI_HOME = home;
+  assert.match((await geminiAgent().check())!, /not logged in; run `gemini` once and choose Login with Google/);
+  writeFileSync(join(home, "oauth_creds.json"), "{}");
+  assert.equal(await geminiAgent().check(), null);
+  mkdirSync(home, { recursive: true });
+  writeFileSync(join(home, "settings.json"), JSON.stringify({ security: { auth: { selectedType: "gemini-api-key" } } }));
+  assert.match((await geminiAgent().check())!, /signed in with gemini-api-key, not a Google account/);
+
+  process.env.PATH = `${FAKE_BIN}:/usr/bin:/bin`;
+  assert.match((await geminiAgent().check())!, /not found on PATH; install Gemini CLI: npm install -g @google\/gemini-cli/);
 });

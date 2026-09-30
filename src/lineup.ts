@@ -1,6 +1,7 @@
 import {
   AGENT_IDS,
   CURSOR_STAND_INS,
+  OPTIONAL_IDS,
   agentFromSpec,
   createAgent,
   cursorAgent,
@@ -49,7 +50,7 @@ export async function autoLineup(config: Config, deps: LineupDeps = defaultDeps)
       const sub = deps.standIn(a.id);
       agents.push(sub);
       notes.push(`${a.name}'s own CLI isn't ready (${problem.split(";")[0]}), so ${sub.name} is standing in`);
-    } else {
+    } else if (!(OPTIONAL_IDS.includes(a.id as AgentId) && /not found on PATH/.test(problem))) {
       notes.push(`Skipping ${a.name}: ${problem}`);
     }
   }

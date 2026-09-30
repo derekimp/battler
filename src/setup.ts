@@ -41,6 +41,14 @@ export const TOOLS: Record<AgentId, Tool> = {
     login: ["cursor-agent", ["login"]],
     binary: "cursor-agent",
   },
+  gemini: {
+    tool: "Gemini CLI",
+    company: "a Google account (free, or Google AI Pro)",
+    install: ["npm", ["install", "-g", "@google/gemini-cli"]],
+    // Gemini CLI signs in on first run: choose "Login with Google", then quit with /quit.
+    login: ["gemini", []],
+    binary: "gemini",
+  },
 };
 
 export interface SetupDeps {
@@ -78,7 +86,7 @@ export const defaultSetupDeps = (prompt: Prompter): SetupDeps => ({
     }),
 });
 
-const NAMES: Record<AgentId, string> = { claude: "Claude", codex: "GPT", grok: "Grok" };
+const NAMES: Record<AgentId, string> = { claude: "Claude", codex: "GPT", grok: "Grok", gemini: "Gemini" };
 
 /** Cursor's installer puts the binary in ~/.local/bin, which isn't always on PATH yet. */
 function adoptLocalBin(binary: string): boolean {
@@ -129,7 +137,8 @@ export async function runSetup(deps: SetupDeps): Promise<number> {
     }
     const after = (await deps.check())[id];
     if (after && !/not found on PATH/.test(after)) {
-      if (!(await prompt.confirm(`Log in to ${t.tool} with ${t.company}? This opens your browser.`, true))) continue;
+      const how = id === "gemini" ? " Choose \"Login with Google\", then type /quit when it's done." : "";
+      if (!(await prompt.confirm(`Log in to ${t.tool} with ${t.company}? This opens your browser.${how}`, true))) continue;
       const code = await deps.run(...t.login);
       if (code !== 0) log(st.red(`  Logging in to ${t.tool} didn't finish. You can run it yourself: ${t.login.flat().join(" ")}`));
     }
@@ -148,7 +157,9 @@ export async function runSetup(deps: SetupDeps): Promise<number> {
     log(st.red("  battler needs at least two of these CLIs, or Cursor on its own. Run `battler setup` again when they're installed."));
     return 1;
   }
-  const lineup = AGENT_IDS.map((id) => (status[id] ? (cursorReady && id !== "grok" ? `${NAMES[id]} (via Cursor)` : null) : NAMES[id])).filter(Boolean);
+  const lineup = AGENT_IDS.map((id) =>
+    status[id] ? (cursorReady && (id === "claude" || id === "codex") ? `${NAMES[id]} (via Cursor)` : null) : NAMES[id],
+  ).filter(Boolean);
   log(`  ${st.green("✓")} ${st.bold("You're ready:")} ${lineup.join(" vs ")}`);
   log();
 

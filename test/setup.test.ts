@@ -9,9 +9,9 @@ import type { Prompter } from "../src/ui/prompt.ts";
 
 type State = Record<AgentId, "ready" | "missing" | "logged-out">;
 
-/** A simulated machine: installing makes a CLI logged-out, logging in makes it ready. */
-function machine(initial: State, answers: (string | boolean)[], opts: { failInstall?: boolean } = {}) {
-  const state = { ...initial };
+/** A simulated machine: installing makes a CLI logged-out, logging in makes it ready. Gemini is ready unless given. */
+function machine(initial: Omit<State, "gemini"> & Partial<State>, answers: (string | boolean)[], opts: { failInstall?: boolean } = {}) {
+  const state: State = { gemini: "ready", ...initial };
   const ran: string[] = [];
   const asked: string[] = [];
   const lines: string[] = [];
@@ -37,8 +37,8 @@ function machine(initial: State, answers: (string | boolean)[], opts: { failInst
     async run(cmd, args) {
       const full = [cmd, ...args].join(" ");
       ran.push(full);
-      const id = (["claude", "codex", "grok"] as AgentId[]).find((i) =>
-        full.includes({ claude: "claude", codex: "codex", grok: "cursor" }[i]),
+      const id = (["claude", "codex", "grok", "gemini"] as AgentId[]).find((i) =>
+        full.includes({ claude: "claude", codex: "codex", grok: "cursor", gemini: "gemini" }[i]),
       )!;
       if (/install/.test(full) && !/login/.test(full)) {
         if (opts.failInstall) return 1;
@@ -48,7 +48,7 @@ function machine(initial: State, answers: (string | boolean)[], opts: { failInst
     },
     async check() {
       const msg = { ready: null, missing: "`x` not found on PATH; install it", "logged-out": "not logged in; run login" };
-      return { claude: msg[state.claude], codex: msg[state.codex], grok: msg[state.grok] };
+      return { claude: msg[state.claude], codex: msg[state.codex], grok: msg[state.grok], gemini: msg[state.gemini] };
     },
     testBattle: async () => 42,
   };
@@ -74,7 +74,7 @@ test("a missing CLI is installed and logged in, only after asking", async () => 
 });
 
 test("declining everything with fewer than 2 CLIs ends with guidance and exit 1", async () => {
-  const m = machine({ claude: "ready", codex: "missing", grok: "missing" }, [false, false]);
+  const m = machine({ claude: "ready", codex: "missing", grok: "missing", gemini: "missing" }, [false, false, false]);
   assert.equal(await runSetup(m.deps), 1);
   assert.deepEqual(m.ran, []);
   assert.match(m.out(), /needs at least two of these CLIs, or Cursor on its own/);
@@ -99,4 +99,12 @@ test("existing config is kept and its values are the defaults", async () => {
   writeFileSync(m.deps.configPath, JSON.stringify({ agents: ["claude", "grok"], length: "long", open: true }));
   await runSetup(m.deps);
   assert.deepEqual(JSON.parse(readFileSync(m.deps.configPath, "utf8")), { agents: ["claude", "grok"], length: "long", open: true });
+});
+
+test("Gemini can be installed and signed in from setup", async () => {
+  const m = machine({ claude: "ready", codex: "ready", grok: "ready", gemini: "missing" }, [true, true, "medium", true, false]);
+  assert.equal(await runSetup(m.deps), 0);
+  assert.deepEqual(m.ran, ["npm install -g @google/gemini-cli", "gemini"]);
+  assert.match(m.asked[1], /Log in to Gemini CLI with a Google account.*Choose "Login with Google", then type \/quit/);
+  assert.match(m.out(), /You're ready: Claude vs GPT vs Grok vs Gemini/);
 });

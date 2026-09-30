@@ -14,7 +14,7 @@ export interface Config {
   /** Open the HTML report in the browser after each battle. */
   open?: boolean;
   /** Model per debater, passed straight to that CLI, e.g. { "grok": "grok-4.7-high" }. */
-  models?: Partial<Record<"claude" | "codex" | "grok", string>>;
+  models?: Partial<Record<"claude" | "codex" | "grok" | "gemini", string>>;
 }
 
 export const CONFIG_PATH = join(process.env.XDG_CONFIG_HOME || join(homedir(), ".config"), "battler", "config.json");

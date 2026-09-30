@@ -79,6 +79,7 @@ async function main() {
   if (cli === "claude" && args[0] === "auth") return console.log(JSON.stringify({ loggedIn: true, authMethod: "claude.ai" }));
   if (cli === "codex" && args[0] === "login") return console.log("Logged in using ChatGPT");
   if (cli === "cursor-agent" && args[0] === "status") return console.log("✓ Logged in as test@example.com");
+  if (cli === "gemini" && args[0] === "--version") return console.log("0.62.0");
 
   await sleep(delay);
   if (listed("FAKE_FAIL")) return console.error(`${cli}: simulated failure`), process.exit(2);
@@ -100,6 +101,12 @@ async function main() {
     }
     writeFileSync(out, answer(stdin(), `codex[${model}]`));
     return console.log("tokens used\n123");
+  }
+  if (cli === "gemini") {
+    const model = args.includes("-m") ? args[args.indexOf("-m") + 1] : "default";
+    // Like the real one: a log line, then the JSON result.
+    console.log("Loaded cached credentials.");
+    return console.log(JSON.stringify({ response: answer(args[args.indexOf("-p") + 1], `gemini[${model}]`), stats: {} }, null, 2));
   }
   if (cli === "cursor-agent") {
     const model = args[args.indexOf("--model") + 1];

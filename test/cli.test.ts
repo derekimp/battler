@@ -100,7 +100,8 @@ test("a debater that fails mid-battle is dropped, the rest finish", () => {
 test("--doctor", () => {
   const ok = battler(["--doctor"]);
   assert.equal(ok.status, 0);
-  assert.match(ok.stderr, /✓ Claude .*ready[\s\S]*✓ GPT .*ready[\s\S]*✓ Grok .*ready[\s\S]*3 of 3 ready/);
+  assert.match(ok.stderr, /✓ Claude .*ready[\s\S]*✓ GPT .*ready[\s\S]*✓ Grok .*ready[\s\S]*✗ Gemini .*not found on PATH[\s\S]*3 of 4 ready/);
+  assert.doesNotMatch(ok.stderr, /stand in/, "only a missing Claude or GPT gets a Cursor stand-in");
   const bad = battler(["--doctor"], { FAKE_LOGGED_OUT: "claude,cursor-agent" });
   assert.equal(bad.status, 1);
   assert.match(bad.stderr, /✗ Claude .*not logged in/);
@@ -231,4 +232,15 @@ test("doctor and battles say which Cursor allowance Grok uses", () => {
   assert.match(warned.stderr, /grok-4\.7-xhigh, Cursor's Other Models allowance\n.*uses Cursor's "Other Models" allowance/);
   const battle = battler(["--json", "-s", "Q?"], { XDG_CONFIG_HOME: dir });
   assert.match(battle.stderr, /! Grok \(grok-4\.7-xhigh\) uses Cursor's "Other Models" allowance/);
+});
+
+test("with Gemini installed and signed in, it joins the battle and the panel", () => {
+  const home = mkdtempSync(join(tmpdir(), "gemini-home-"));
+  writeFileSync(join(home, "oauth_creds.json"), "{}");
+  const r = battler(["--json", "Q?"], { PATH: `${FAKE_BIN}-gemini:${FAKE_BIN}:${process.env.PATH}`, BATTLER_GEMINI_HOME: home });
+  assert.equal(r.status, 0, r.stderr);
+  const v = JSON.parse(r.stdout).verdict;
+  assert.deepEqual(v.scorecard.map((s: { debater: string }) => s.debater).sort(), ["Claude", "GPT", "Gemini", "Grok"]);
+  assert.equal(v.panel.judges.length, 4);
+  assert.match(r.stderr, /Claude vs GPT vs Grok vs Gemini/);
 });

@@ -4,10 +4,11 @@ import type { AgentId } from "../src/adapters/cli-agents.ts";
 import type { Agent } from "../src/core/types.ts";
 import { autoLineup, dedupeNames, defaultJudge, explicitLineup } from "../src/lineup.ts";
 
-const NAMES: Record<AgentId, string> = { claude: "Claude", codex: "GPT", grok: "Grok" };
+const NAMES: Record<AgentId, string> = { claude: "Claude", codex: "GPT", grok: "Grok", gemini: "Gemini" };
 
-/** Lineup deps where `broken` CLIs fail their check. */
-function deps(broken: AgentId[]) {
+/** Lineup deps where `broken` CLIs fail their check. Gemini isn't installed unless `withGemini`. */
+function deps(broken: AgentId[], withGemini = false) {
+  if (!withGemini) broken = [...broken, "gemini"];
   const agent = (id: string, name: string, problem: string | null): Agent => ({
     id,
     name,
@@ -80,4 +81,11 @@ test("quotaNote flags debaters on Cursor's Other Models allowance", async () => 
     quotaNote([cursorAgent("claude-sonnet-5-medium", { name: "Claude (via Cursor)" }), cursorGrokAgent("grok-4.7-xhigh")]),
     `Claude (via Cursor) (claude-sonnet-5-medium), Grok (grok-4.7-xhigh) use Cursor's "Other Models" allowance`,
   );
+});
+
+test("Gemini joins when installed; when it isn't, nobody is told it was skipped", async () => {
+  const none = await autoLineup({}, deps([]));
+  assert.deepEqual(none.notes, []);
+  const all = await autoLineup({}, deps([], true));
+  assert.deepEqual(ids(all.agents), ["claude", "codex", "grok", "gemini"]);
 });

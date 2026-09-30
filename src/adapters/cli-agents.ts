@@ -3,6 +3,7 @@
  *   Claude  -> Claude Code  (`claude -p`)        Claude Pro/Max login
  *   GPT     -> Codex CLI    (`codex exec`)       ChatGPT login
  *   Grok    -> Cursor CLI   (`cursor-agent -p`)  Cursor login, Grok model
+ *   Gemini  -> Gemini CLI   (`gemini -p`)        Google account login
  *
  * API keys are stripped from the child environment so every call is billed to the
  * subscription login, never to a pay-per-token key that happens to be exported.
@@ -10,6 +11,7 @@
 import { spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { Agent, AskOptions } from "../core/types.ts";
 
@@ -21,6 +23,9 @@ const API_KEY_VARS = [
   "OPENAI_API_KEY",
   "CODEX_API_KEY",
   "CURSOR_API_KEY",
+  "GEMINI_API_KEY",
+  "GOOGLE_API_KEY",
+  "GOOGLE_GENAI_USE_VERTEXAI",
 ];
 
 export function subscriptionEnv(): NodeJS.ProcessEnv {
@@ -43,6 +48,7 @@ const INSTALL_HINTS: Record<string, string> = {
   claude: "install Claude Code: https://claude.com/claude-code",
   codex: "install Codex CLI: npm install -g @openai/codex",
   "cursor-agent": "install Cursor CLI: curl https://cursor.com/install -fsS | bash",
+  gemini: "install Gemini CLI: npm install -g @google/gemini-cli",
 };
 
 const DEFAULT_TIMEOUT_MS = 5 * 60_000;
@@ -316,15 +322,63 @@ export function cursorGrokAgent(model?: string): Agent {
 /** Grok models that were battler's default in earlier versions, so were never really chosen. */
 export const FORMER_GROK_DEFAULTS = ["grok-4.7-medium"];
 
-export type AgentId = "claude" | "codex" | "grok";
+
+/**
+ * Gemini through the Gemini CLI, signed in with a Google account (free, or Google AI Pro/Ultra).
+ * Runs in plan mode, which is read-only. An API-key or Vertex login isn't a subscription, so
+ * check() reports it rather than using it.
+ */
+export function geminiAgent(model?: string): Agent {
+  return {
+    id: "gemini",
+    name: "Gemini",
+    spec: model ? `gemini:${model}` : "gemini",
+    async ask(prompt: string, opts: AskOptions = {}) {
+      const args = ["-p", withSystem(prompt, opts.system), "-o", "json", "--approval-mode", "plan", "--skip-trust"];
+      if (model) args.push("-m", model);
+      const r = await run("gemini", args, { signal: opts.signal });
+      // Log lines can precede the JSON; take the last top-level object.
+      const start = r.stdout.lastIndexOf("\n{") + 1;
+      let json: { response?: string; error?: { message?: string } };
+      try {
+        json = JSON.parse(r.stdout.slice(start));
+      } catch {
+        throw failure("gemini", r);
+      }
+      if (json.error || r.code !== 0 || !json.response) {
+        throw new Error(`gemini: ${explain("gemini", json.error?.message || r.stderr || "empty response")}`);
+      }
+      return json.response.trim();
+    },
+    async check() {
+      const r = await run("gemini", ["--version"], { timeoutMs: 30_000 }).catch((e: Error) => e);
+      if (r instanceof Error) return r.message;
+      const home = process.env.BATTLER_GEMINI_HOME || join(homedir(), ".gemini"); // env var: tests only
+      let authType: string | undefined;
+      try {
+        const settings = JSON.parse(readFileSync(join(home, "settings.json"), "utf8"));
+        authType = settings?.security?.auth?.selectedType ?? settings?.selectedAuthType;
+      } catch {}
+      if (authType && !/oauth|google/i.test(authType)) return `signed in with ${authType}, not a Google account; run \`gemini\` and choose Login with Google`;
+      if (!existsSync(join(home, "oauth_creds.json"))) return "not logged in; run `gemini` once and choose Login with Google";
+      return null;
+    },
+  };
+}
+
+export type AgentId = "claude" | "codex" | "grok" | "gemini";
 
 /** The default line-up, in the order they are preferred as judge. */
-export const AGENT_IDS: AgentId[] = ["claude", "codex", "grok"];
+export const AGENT_IDS: AgentId[] = ["claude", "codex", "grok", "gemini"];
+
+/** Joins battles when installed, but isn't worth a "skipping" note when it isn't. */
+export const OPTIONAL_IDS: AgentId[] = ["gemini"];
 
 const FACTORIES: Record<AgentId, (model?: string) => Agent> = {
   claude: claudeAgent,
   codex: codexAgent,
   grok: cursorGrokAgent,
+  gemini: geminiAgent,
 };
 
 const ALIASES: Record<string, AgentId> = { gpt: "codex", chatgpt: "codex" };

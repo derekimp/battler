@@ -125,7 +125,7 @@ async function main() {
     const ready = [...status.values()].filter((e) => !e).length;
     const cursorReady = !status.get("grok");
     log(err.dim(`\n  ${ready} of ${agents.length} ready. A battle needs at least 2.`));
-    if (cursorReady && ready < agents.length) {
+    if (cursorReady && (status.get("claude") || status.get("codex"))) {
       log(err.dim(`  Cursor will stand in for the missing Claude/GPT CLIs, using its Claude and GPT models (Cursor's "Other Models" allowance).`));
     }
     log();

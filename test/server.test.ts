@@ -64,7 +64,7 @@ test("serves the page and its assets", async () => {
 test("status lists the AIs, their readiness and Cursor allowance", async () => {
   const s = await (await api("/api/status")).json();
   assert.equal(s.canBattle, true);
-  assert.deepEqual(s.agents.map((a: any) => [a.id, a.ready]), [["claude", true], ["codex", true], ["grok", true]]);
+  assert.deepEqual(s.agents.map((a: any) => [a.id, a.ready]), [["claude", true], ["codex", true], ["grok", true], ["gemini", false]]);
   const grok = s.agents.find((a: any) => a.id === "grok");
   assert.deepEqual([grok.model, grok.allowance], ["cursor-grok-4.6-high", "Cursor Models"]);
   assert.equal(s.agents.find((a: any) => a.id === "codex").standInSpec, "cursor:gpt-5.5-medium");

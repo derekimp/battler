@@ -86,6 +86,7 @@ In a real terminal each debater has its own color, and progress updates live wit
 | Claude | Claude Code (`claude`) | [claude.com/claude-code](https://claude.com/claude-code) | Claude Pro or Max: run `claude` and log in |
 | GPT | Codex CLI (`codex`) | `npm install -g @openai/codex` | ChatGPT: `codex login` |
 | Grok | Cursor CLI (`cursor-agent`) | `curl https://cursor.com/install -fsS \| bash` | Cursor: `cursor-agent login` |
+| Gemini (optional) | Gemini CLI (`gemini`) | `npm install -g @google/gemini-cli` | Google account: run `gemini`, choose Login with Google |
 
 ### Which debaters you get
 
@@ -93,7 +94,7 @@ With no `--agents` flag, battler checks what's installed and logged in (`battler
 
 | You have | Debaters |
 |---|---|
-| Claude Code, Codex and Cursor | Claude, GPT, Grok |
+| Claude Code, Codex and Cursor | Claude, GPT, Grok (plus Gemini if its CLI is signed in) |
 | Claude Code and Codex | Claude, GPT |
 | Any one of Claude Code / Codex, plus Cursor | Cursor stands in for the missing one, e.g. Claude, GPT (via Cursor), Grok |
 | Only Cursor | Claude (via Cursor), GPT (via Cursor), Grok |
