@@ -1,7 +1,9 @@
 name: Release
 
 # Push a tag like v0.2.0 to publish that version to npm.
-# Needs an NPM_TOKEN repository secret (an npm "automation" token).
+# Uses npm trusted publishing (OIDC): no token is stored. One-time setup after the first manual
+# `npm publish`: npmjs.com → battler → Settings → Trusted publishing → GitHub Actions,
+# repository derekimp/battler, workflow release.yml.
 on:
   push:
     tags: ["v*"]
@@ -14,17 +16,15 @@ jobs:
   publish:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
       - run: npm ci
       - name: Tag matches package.json version
         run: test "v$(node -p 'require("./package.json").version')" = "$GITHUB_REF_NAME"
-      - run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - run: npm publish --access public
       - name: GitHub release
         run: gh release create "$GITHUB_REF_NAME" --generate-notes
         env:
