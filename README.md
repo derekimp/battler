@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/derekimp/battler/actions/workflows/ci.yml/badge.svg)](https://github.com/derekimp/battler/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/battler)](https://www.npmjs.com/package/battler)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](https://github.com/derekimp/battler/blob/main/LICENSE)
 
 **Make your AI subscriptions debate each other, then get one consolidated answer.**
 
@@ -14,9 +14,9 @@ where they still disagree, and who argued best.
 No API keys and no per-token bills. battler drives the official tools you're already signed in to, so
 every call uses the subscriptions you already pay for.
 
-![The battler web app: Claude, GPT and Grok debate "Is it still worth learning to code in 2026?", then judge each other and show a verdict and scorecard](docs/demo-web.gif)
+![The battler web app: Claude, GPT and Grok debate "Is it still worth learning to code in 2026?", then judge each other and show a verdict and scorecard](https://raw.githubusercontent.com/derekimp/battler/main/docs/demo-web.gif)
 
-<sub>A real battle in the web app, with the waiting sped up. [MP4 version](docs/demo-web.mp4).</sub>
+<sub>A real battle in the web app, with the waiting sped up. [MP4 version](https://github.com/derekimp/battler/blob/main/docs/demo-web.mp4).</sub>
 
 ## Why battler
 
@@ -42,7 +42,7 @@ Or stay in the terminal:
 battler "Is it still worth learning to code in 2026?"
 ```
 
-![battler in the terminal: "Is a hot dog a sandwich?", Grok wins](docs/demo-terminal.gif)
+![battler in the terminal: "Is a hot dog a sandwich?", Grok wins](https://raw.githubusercontent.com/derekimp/battler/main/docs/demo-terminal.gif)
 
 ## Requirements
 
@@ -270,7 +270,7 @@ test/           node:test suites; test/fixtures has fake claude/codex/cursor-age
 scripts/demo/   how the demo GIFs were recorded
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md).
+See [CONTRIBUTING.md](https://github.com/derekimp/battler/blob/main/CONTRIBUTING.md) and [CHANGELOG.md](https://github.com/derekimp/battler/blob/main/CHANGELOG.md).
 
 ## License
 
