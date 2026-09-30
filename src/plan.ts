@@ -3,7 +3,7 @@
  * judges, how long, and whether it continues an earlier battle.
  */
 import { relative } from "node:path";
-import { agentFromSpec } from "./adapters/cli-agents.ts";
+import { agentFromSpec, FORMER_GROK_DEFAULTS } from "./adapters/cli-agents.ts";
 import type { Config } from "./config.ts";
 import type { FollowUp } from "./core/battle.ts";
 import { finalPositions, savedAnswer, type SavedBattle } from "./core/saved.ts";
@@ -112,7 +112,7 @@ export function continuePlan(
 ): Plan {
   const agents = saved.agents.map((a) => {
     try {
-      return { ...agentFromSpec(a.spec ?? a.id), id: a.id, name: a.name };
+      return { ...agentFromSpec(currentSpec(a)), id: a.id, name: a.name };
     } catch (e) {
       throw new PlanError(`can't recreate ${a.name} from ${displayPath(from)}: ${(e as Error).message}`);
     }
@@ -146,6 +146,16 @@ export function continuePlan(
     followUpOf: saved.followUpOf,
     notes: note ? [`${source} · ${so}`, note] : [`${source} · ${so}`],
   };
+}
+
+/**
+ * The spec to recreate a saved debater with. Battles saved by earlier versions recorded Grok's
+ * default model explicitly; those follow today's default instead of pinning the old one.
+ */
+function currentSpec(a: { id: string; spec?: string }): string {
+  const spec = a.spec ?? a.id;
+  if (a.id === "grok" && FORMER_GROK_DEFAULTS.some((m) => spec === `cursor:${m}`)) return "grok";
+  return spec;
 }
 
 /** File-name part for a topic: letters in any script (a Chinese topic keeps its Chinese), ~40 columns. */

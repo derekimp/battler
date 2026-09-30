@@ -248,7 +248,11 @@ export function cursorQuota(model: string): "Cursor Models" | "Other Models" {
 
 /** The Cursor model behind an agent, if it runs through Cursor. */
 export function cursorModelOf(agent: Agent): string | undefined {
-  return agent.spec?.startsWith("cursor:") ? agent.spec.slice("cursor:".length) : undefined;
+  const spec = agent.spec ?? "";
+  if (spec.startsWith("cursor:")) return spec.slice("cursor:".length);
+  if (spec === "grok") return DEFAULT_GROK_MODEL;
+  if (spec.startsWith("grok:")) return spec.slice("grok:".length);
+  return undefined;
 }
 
 /** Models used when Cursor stands in for a missing Claude Code or Codex CLI. */
@@ -301,9 +305,16 @@ export function cursorAgent(model: string, opts: { id?: string; name?: string } 
   };
 }
 
-export function cursorGrokAgent(model = DEFAULT_GROK_MODEL): Agent {
-  return cursorAgent(model, { id: "grok", name: "Grok" });
+/**
+ * Grok through Cursor. The spec records a model only if one was chosen, so a saved battle that
+ * used the default keeps following the default when it's continued later.
+ */
+export function cursorGrokAgent(model?: string): Agent {
+  return { ...cursorAgent(model ?? DEFAULT_GROK_MODEL, { id: "grok", name: "Grok" }), spec: model ? `grok:${model}` : "grok" };
 }
+
+/** Grok models that were battler's default in earlier versions, so were never really chosen. */
+export const FORMER_GROK_DEFAULTS = ["grok-4.7-medium"];
 
 export type AgentId = "claude" | "codex" | "grok";
 
