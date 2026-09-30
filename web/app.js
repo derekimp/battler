@@ -159,10 +159,11 @@ $("#history").addEventListener("click", () => openSidebar(false));
 function lineupFor(status) {
   // What each AI would be in a battle: itself, a Cursor stand-in, or unavailable.
   const cursorReady = status.agents.some((a) => a.id === "grok" && a.ready);
+  // Only Claude and GPT have Cursor stand-ins (the status says which via standInSpec).
   return status.agents.map((a) => ({
     ...a,
-    usable: a.ready || (cursorReady && a.id !== "grok"),
-    via: !a.ready && cursorReady && a.id !== "grok" ? "Cursor" : null,
+    usable: a.ready || (cursorReady && Boolean(a.standInSpec)),
+    via: !a.ready && cursorReady && a.standInSpec ? "Cursor" : null,
   }));
 }
 

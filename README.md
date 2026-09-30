@@ -10,7 +10,13 @@ disagree, and who argued best.
 No API keys and no per-token bills. battler drives the official command-line tools you're already
 signed in to, so every call uses the subscriptions you already pay for.
 
-![battler running a short battle: Claude, GPT and Grok debate "Is a hot dog a sandwich?" and Grok wins](docs/demo.gif)
+![The battler web app: Claude, GPT and Grok debate "Is it still worth learning to code in 2026?", then judge each other and show a verdict and scorecard](docs/demo-web.gif)
+
+<sub>A real battle in the web app (`battler serve`), with the waiting sped up. [MP4 version](docs/demo-web.mp4).</sub>
+
+And in the terminal:
+
+![battler running a short battle in the terminal: "Is a hot dog a sandwich?", Grok wins](docs/demo-terminal.gif)
 
 <details>
 <summary>What a medium battle prints</summary>
