@@ -14,3 +14,13 @@ echo "$json" | node -e '
     console.log("smoke ok:", v.verdict.scorecard.map((x) => x.debater).join(", "));
   });'
 node dist/cli.js --doctor
+
+# The web app, from the built files: page, assets and API respond.
+node dist/cli.js serve --no-open --port 4799 -o "$out_dir" >/dev/null 2>&1 &
+serve_pid=$!
+trap 'kill $serve_pid 2>/dev/null' EXIT
+for i in 1 2 3 4 5 6 7 8 9 10; do curl -sf http://localhost:4799/ >/dev/null && break; sleep 0.5; done
+curl -sf http://localhost:4799/ | grep -q 'assets/app.js'
+curl -sf http://localhost:4799/assets/app.js >/dev/null
+curl -sf -H 'x-battler: 1' http://localhost:4799/api/battles | grep -q 'Tabs or spaces'
+echo "serve ok"

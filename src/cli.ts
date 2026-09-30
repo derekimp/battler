@@ -1,22 +1,19 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { join, relative, resolve } from "node:path";
+import { resolve } from "node:path";
 import { homedir } from "node:os";
 import { parseArgs } from "node:util";
-import { AGENT_IDS, agentFromSpec, createAgent, cursorModelOf, cursorQuota } from "./adapters/cli-agents.ts";
+import { AGENT_IDS, createAgent, cursorModelOf, cursorQuota } from "./adapters/cli-agents.ts";
 import { CONFIG_PATH, loadConfig, type Config } from "./config.ts";
-import { runBattle } from "./core/battle.ts";
-import { renderReport, renderVerdictMarkdown } from "./core/report.ts";
-import type { FollowUp } from "./core/battle.ts";
-import { finalPositions, latestSaved, loadSaved, savedAnswer, toSaved, type SavedBattle } from "./core/saved.ts";
-import type { Agent, BattleResult, Turn } from "./core/types.ts";
+import { renderVerdictMarkdown } from "./core/report.ts";
+import { latestSaved, loadSaved } from "./core/saved.ts";
+import type { Agent } from "./core/types.ts";
 import { LENGTHS, namedVerdict, type Length } from "./core/verdict.ts";
 import { Progress } from "./ui/progress.ts";
-import { debaterColor, formatDuration, style, termWidth, truncate } from "./ui/term.ts";
-import { renderHtmlReport } from "./ui/html-report.ts";
+import { debaterColor, formatDuration, style, termWidth } from "./ui/term.ts";
 import { renderVerdict } from "./ui/verdict-view.ts";
-import { autoLineup, defaultJudge, explicitLineup, quotaNote } from "./lineup.ts";
+import { continuePlan, displayPath, newPlan, type Plan } from "./plan.ts";
+import { runPlan, type RunOutput } from "./run.ts";
 import { defaultSetupDeps, runSetup } from "./setup.ts";
 import { terminalPrompter } from "./ui/prompt.ts";
 
@@ -25,6 +22,7 @@ const HELP = `battler: make your AI subscriptions debate a topic and consolidate
 Usage:
   battler "Is Rust better than Go for backend services?"
   battler                  asks for the topic and length
+  battler serve            open the web app in your browser (runs locally)
   battler setup            install and log in to the AI CLIs, pick your defaults
   battler continue "q"     follow-up question to your last battle, with it as background
   battler continue         another round on your last battle's topic
@@ -49,6 +47,10 @@ Options:
       --from <report>   With continue: which battle to continue (default: the latest)
       --json            Print the verdict as JSON (for scripts)
       --doctor          Check which CLIs are installed and logged in with a subscription
+      --port <n>        With serve: port to use                   (default: 4747)
+      --lan             With serve: also reachable from your phone on the same Wi-Fi,
+                        protected by an access token
+      --no-open         With serve: don't open the browser
   -h, --help
 
 Defaults can be set in ${CONFIG_PATH}
@@ -90,6 +92,9 @@ async function main() {
       out: { type: "string", short: "o" },
       doctor: { type: "boolean" },
       from: { type: "string" },
+      port: { type: "string" },
+      lan: { type: "boolean" },
+      "no-open": { type: "boolean" },
       help: { type: "boolean", short: "h" },
     },
   });
@@ -132,76 +137,60 @@ async function main() {
   }
 
   const outDir = resolve((values.out ?? config.out ?? "battles").replace(/^~(?=$|\/)/, homedir()));
+
+  if (positionals[0] === "serve") {
+    await serve(outDir, config, { port: values.port, lan: Boolean(values.lan), open: !values["no-open"] });
+    return;
+  }
   const shorthand = values.short ? "short" : values.long ? "long" : values.medium ? "medium" : undefined;
-  const lengthFlag = (shorthand ?? values.length) as Length | undefined;
-  if (lengthFlag && !LENGTHS.includes(lengthFlag)) fail(`--length must be one of ${LENGTHS.join(", ")}`);
+  const lengthFlag = shorthand ?? values.length;
+  if (lengthFlag && !LENGTHS.includes(lengthFlag as Length)) fail(`--length must be one of ${LENGTHS.join(", ")}`);
   const roundsFlag = values.rounds === undefined ? undefined : Number(values.rounds);
   if (roundsFlag !== undefined && (!Number.isInteger(roundsFlag) || roundsFlag < 1 || roundsFlag > 5)) fail("--rounds must be 1-5");
 
   let plan: Plan;
   let chat = false; // offer follow-ups after each verdict
-  if (positionals[0] === "continue") {
-    const from = values.from ?? latestSaved(outDir);
-    if (!from) fail(`no earlier battle found in ${display(outDir)}. Run a battle first, or pass --from <report>`);
-    const saved = loadOrFail(from);
-    let question = positionals.slice(1).join(" ").trim() || (process.stdin.isTTY ? "" : (await readStdin()).trim());
-    if (!question && process.stdin.isTTY && process.stderr.isTTY && !values.json) {
-      process.stderr.write("\n");
-      question = await terminalPrompter.text("Follow-up question? (Enter to keep debating the same topic)");
-    }
-    plan = continuePlan(saved, from, question, { length: lengthFlag, rounds: roundsFlag, config, judge: values.judge });
-    chat = process.stdin.isTTY && process.stderr.isTTY && !values.json;
-  } else {
-    // Interactive when run bare in a terminal: ask for the topic (and length, unless it's set).
-    const interactive = !positionals.length && process.stdin.isTTY && process.stderr.isTTY;
-    let topic = (positionals.join(" ") || (interactive ? "" : await readStdin())).trim();
-    if (interactive) {
-      process.stderr.write("\n");
-      topic = await terminalPrompter.text("What should they debate?");
-    }
-    if (!topic) fail(`no topic given\n\n${HELP}`);
-    let length = lengthFlag ?? (config.length as Length | undefined);
-    if (!length && interactive) {
-      length = await terminalPrompter.select<Length>("How long?", [
-        { value: "short", label: "short", hint: "quick answer and a winner, about a minute" },
-        { value: "medium", label: "medium", hint: "the full verdict, 2-3 minutes" },
-        { value: "long", label: "long", hint: "in depth" },
-      ], 1);
-    }
-    length ??= "medium";
-    if (!LENGTHS.includes(length)) fail(`--length must be one of ${LENGTHS.join(", ")}`);
-    const rounds = roundsFlag ?? config.rounds ?? 2;
-    if (!Number.isInteger(rounds) || rounds < 1 || rounds > 5) fail("rounds must be 1-5");
-
-    // Debaters: explicit list (flag, then config), otherwise whichever CLIs are ready.
-    const explicit = values.agents?.split(",") ?? config.agents;
-    let agents: Agent[];
-    let skipped: string[] = [];
-    try {
-      if (explicit) {
-        agents = explicitLineup(explicit, config);
-      } else {
-        ({ agents, notes: skipped } = await autoLineup(config));
-        if (agents.length < 2) {
-          fail(`need at least 2 AI CLIs installed and logged in (or just Cursor).\n  ${skipped.join("\n  ")}\n\n  Run \`battler setup\` to install and log in step by step.`);
-        }
+  try {
+    if (positionals[0] === "continue") {
+      const from = values.from ?? latestSaved(outDir);
+      if (!from) fail(`no earlier battle found in ${displayPath(outDir)}. Run a battle first, or pass --from <report>`);
+      const saved = loadSaved(from);
+      let question = positionals.slice(1).join(" ").trim() || (process.stdin.isTTY ? "" : (await readStdin()).trim());
+      if (!question && process.stdin.isTTY && process.stderr.isTTY && !values.json) {
+        process.stderr.write("\n");
+        question = await terminalPrompter.text("Follow-up question? (Enter to keep debating the same topic)");
       }
-    } catch (e) {
-      fail((e as Error).message);
+      plan = continuePlan(saved, from, question, { length: lengthFlag, rounds: roundsFlag, config, judge: values.judge });
+      chat = process.stdin.isTTY && process.stderr.isTTY && !values.json;
+    } else {
+      // Interactive when run bare in a terminal: ask for the topic (and length, unless it's set).
+      const interactive = !positionals.length && process.stdin.isTTY && process.stderr.isTTY;
+      let topic = (positionals.join(" ") || (interactive ? "" : await readStdin())).trim();
+      if (interactive) {
+        process.stderr.write("\n");
+        topic = await terminalPrompter.text("What should they debate?");
+      }
+      if (!topic) fail(`no topic given\n\n${HELP}`);
+      let length = lengthFlag ?? config.length;
+      if (!length && interactive) {
+        length = await terminalPrompter.select<Length>("How long?", [
+          { value: "short", label: "short", hint: "quick answer and a winner, about a minute" },
+          { value: "medium", label: "medium", hint: "the full verdict, 2-3 minutes" },
+          { value: "long", label: "long", hint: "in depth" },
+        ], 1);
+      }
+      plan = await newPlan({
+        topic,
+        length: length ?? "medium",
+        rounds: roundsFlag ?? config.rounds ?? 2,
+        agents: values.agents?.split(",") ?? config.agents,
+        judge: values.judge,
+        config,
+      });
+      chat = interactive && !values.json;
     }
-    if (new Set(agents.map((a) => a.id)).size !== agents.length) fail("each debater can only appear once");
-    if (agents.length < 2) fail("need at least 2 debaters");
-    if (agents.length > 6) fail("at most 6 debaters");
-    const note = quotaNote(agents);
-    plan = {
-      topic,
-      agents,
-      judges: pickJudges(agents, length, values.judge ?? config.judge, config),
-      rounds,
-      length,
-      notes: note ? [...skipped, note] : skipped,
-    };
-    chat = interactive && !values.json;
+  } catch (e) {
+    fail((e as Error).message);
   }
 
   const openIt = values.open ?? config.open ?? false;
@@ -210,101 +199,55 @@ async function main() {
     if (!chat) break;
     const question = await terminalPrompter.text("Follow-up question? (Enter to finish, \"more\" for another round)");
     if (!question) break;
-    plan = continuePlan(saved, jsonFile, question.toLowerCase() === "more" ? "" : question, {
-      length: lengthFlag,
-      rounds: roundsFlag,
-      config,
-      judge: values.judge,
-    });
-  }
-}
-
-/** Everything needed to run one battle. */
-interface Plan {
-  topic: string;
-  agents: Agent[];
-  judges: Agent[];
-  rounds: number;
-  length: Length;
-  notes: string[];
-  labels?: Map<string, string>;
-  resume?: Turn[][];
-  followUp?: FollowUp;
-  /** Carried over from a continued battle that was itself a follow-up. */
-  followUpOf?: string;
-}
-
-const display = (f: string) => (relative(process.cwd(), f).startsWith("..") ? f : relative(process.cwd(), f));
-
-function loadOrFail(path: string): SavedBattle {
-  try {
-    return loadSaved(path);
-  } catch (e) {
-    fail((e as Error).message);
-  }
-}
-
-/** Judges: a panel of the debaters themselves, or one agent. Short battles default to one to save usage. */
-function pickJudges(agents: Agent[], length: Length, requested: string | undefined, config: Config): Agent[] {
-  const spec = requested ?? (length === "short" ? undefined : "panel");
-  try {
-    if (spec?.trim().toLowerCase() === "panel") {
-      const lead = defaultJudge(agents);
-      return [lead, ...agents.filter((a) => a !== lead)];
-    }
-    return [spec ? agentFromSpec(spec, config.models) : defaultJudge(agents)];
-  } catch (e) {
-    fail((e as Error).message);
-  }
-}
-
-/**
- * Continue a saved battle: with a question, a follow-up debate that has the earlier one as
- * background; without, more rounds on the same topic. Same debaters, same labels.
- */
-function continuePlan(
-  saved: SavedBattle,
-  from: string,
-  question: string,
-  opts: { length?: Length; rounds?: number; config: Config; judge?: string },
-): Plan {
-  const agents = saved.agents.map((a) => {
     try {
-      return { ...agentFromSpec(a.spec ?? a.id), id: a.id, name: a.name };
+      plan = continuePlan(saved, jsonFile, question.toLowerCase() === "more" ? "" : question, {
+        length: lengthFlag,
+        rounds: roundsFlag,
+        config,
+        judge: values.judge,
+      });
     } catch (e) {
-      fail(`can't recreate ${a.name} from ${display(from)}: ${(e as Error).message}`);
+      fail((e as Error).message);
     }
-  });
-  const length = opts.length ?? saved.length;
-  const labels = new Map(saved.labels);
-  const judges = pickJudges(agents, length, opts.judge ?? opts.config.judge, opts.config);
-  const source = `Continuing ${display(from.replace(/\.json$/, ".html"))}`;
-  if (question) {
-    return {
-      topic: question,
-      agents,
-      judges,
-      length,
-      labels,
-      rounds: opts.rounds ?? opts.config.rounds ?? 2,
-      followUp: { topic: saved.topic, answer: savedAnswer(saved), finals: finalPositions(saved) },
-      notes: [source],
-    };
   }
-  return {
-    topic: saved.topic,
-    agents,
-    judges,
-    length,
-    labels,
-    rounds: opts.rounds ?? 1,
-    resume: saved.rounds,
-    followUpOf: saved.followUpOf,
-    notes: [`${source} · ${saved.rounds.length} round${saved.rounds.length === 1 ? "" : "s"} so far`],
-  };
 }
 
-/** Run a plan, show progress, save the reports and the battle, and print the verdict. */
+/** `battler serve`: start the local web app and open it. */
+async function serve(outDir: string, config: Config, opts: { port?: string; lan: boolean; open: boolean }) {
+  const { startServer } = await import("./server.ts");
+  const { randomBytes } = await import("node:crypto");
+  const { networkInterfaces } = await import("node:os");
+  const token = opts.lan ? randomBytes(12).toString("base64url") : undefined;
+  let port = opts.port ? Number(opts.port) : 4747;
+  if (!Number.isInteger(port) || port < 1 || port > 65535) fail("--port must be a number from 1 to 65535");
+  // Try the next ports if the default one is taken.
+  for (let attempt = 0; ; attempt++) {
+    const server = startServer({ port, host: opts.lan ? "0.0.0.0" : "127.0.0.1", outDir, config, token });
+    const ok = await new Promise<boolean>((res) => {
+      server.once("listening", () => res(true));
+      server.once("error", (e: NodeJS.ErrnoException) => {
+        if (e.code !== "EADDRINUSE" || opts.port || attempt >= 10) fail(`can't listen on port ${port}: ${e.message}`);
+        res(false);
+      });
+    });
+    if (ok) break;
+    port++;
+  }
+  const local = `http://localhost:${port}/`;
+  log();
+  log(`  ${err.bold("battler is running")} at ${err.cyan(local)}`);
+  if (token) {
+    const lanIps = Object.values(networkInterfaces()).flat().filter((i) => i && i.family === "IPv4" && !i.internal).map((i) => i!.address);
+    for (const ip of lanIps) log(`  On your phone (same Wi-Fi):  ${err.cyan(`http://${ip}:${port}/?t=${token}`)}`);
+    log(err.yellow("  Anyone with that link on your network can start battles with your subscriptions. Keep it private."));
+  }
+  log(err.dim(`  Battles are saved in ${displayPath(outDir)}. Press Ctrl+C to stop.`));
+  log();
+  if (opts.open) spawn("open", [token ? `${local}?t=${token}` : local], { stdio: "ignore", detached: true }).on("error", () => {}).unref();
+  await new Promise(() => {}); // run until Ctrl+C
+}
+
+/** Run a plan with terminal progress, save the reports and the battle, and print the verdict. */
 async function execute(plan: Plan, outDir: string, openIt: boolean, json: boolean) {
   const progress = new Progress({
     topic: plan.topic,
@@ -325,45 +268,20 @@ async function execute(plan: Plan, outDir: string, openIt: boolean, json: boolea
   process.once("SIGINT", onSigint);
 
   const started = Date.now();
-  let result: BattleResult;
+  let out: RunOutput;
   try {
-    result = await runBattle({
-      topic: plan.topic,
-      agents: plan.agents,
-      judges: plan.judges,
-      rounds: plan.rounds,
-      length: plan.length,
-      labels: plan.labels,
-      resume: plan.resume,
-      followUp: plan.followUp,
-      signal: controller.signal,
-      onEvent: (e) => progress.handle(e),
-    });
+    out = await runPlan(plan, { outDir, signal: controller.signal, onEvent: (e) => progress.handle(e) });
   } catch (e) {
     progress.fail();
     throw e;
   } finally {
     process.off("SIGINT", onSigint);
   }
-  if (plan.followUpOf && !result.followUpOf) result.followUpOf = plan.followUpOf;
-
-  mkdirSync(outDir, { recursive: true });
-  // Keep letters in any script (a Chinese topic keeps its Chinese), about 40 columns wide.
-  const slug =
-    truncate(plan.topic.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "-").replace(/^-|-$/g, ""), 41).replace(/…$/, "").replace(/-$/, "") ||
-    "battle";
-  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
-  const file = join(outDir, `${stamp}-${slug}.md`);
-  writeFileSync(file, renderReport(result));
-  const htmlFile = file.replace(/\.md$/, ".html");
-  writeFileSync(htmlFile, renderHtmlReport(result));
-  const jsonFile = file.replace(/\.md$/, ".json");
-  const saved = toSaved(result, plan.agents);
-  writeFileSync(jsonFile, JSON.stringify(saved, null, 2) + "\n");
+  const { result, htmlFile, mdFile, jsonFile, saved } = out;
 
   progress.finish(
     `Done in ${formatDuration(Date.now() - started)}`,
-    `Report: ${display(htmlFile)}`,
+    `Report: ${displayPath(htmlFile)}`,
     openIt ? "Opening it in your browser." : "Add --open to view it in your browser.",
     `Follow up: battler continue "your question"   ·   more rounds: battler continue`,
   );
@@ -377,7 +295,7 @@ async function execute(plan: Plan, outDir: string, openIt: boolean, json: boolea
       ...(result.followUpOf ? { followUpOf: result.followUpOf } : {}),
       verdict,
       ...(verdict ? {} : { verdictText: result.verdictText }),
-      transcript: file,
+      transcript: mdFile,
       report: htmlFile,
       saved: jsonFile,
     };

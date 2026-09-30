@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>battler</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%231d1d1f'/><circle cx='11' cy='16' r='5' fill='%23d97757'/><circle cx='21' cy='16' r='5' fill='%235b8def' fill-opacity='.9'/></svg>">
+<link rel="stylesheet" href="assets/report.css">
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar" id="sidebar" aria-label="Battle history">
+    <div class="sidebar-top">
+      <a class="logo" href="#/" aria-label="battler home">
+        <span class="logo-mark" aria-hidden="true"><i></i><i></i></span>
+        battler
+      </a>
+      <button class="icon-btn only-mobile" id="close-sidebar" aria-label="Close history">✕</button>
+    </div>
+    <a class="new-btn" href="#/">
+      <span aria-hidden="true">＋</span> New battle
+    </a>
+    <div class="history-label">History</div>
+    <nav class="history" id="history" aria-live="polite"></nav>
+  </aside>
+  <div class="scrim" id="scrim" hidden></div>
+
+  <div class="main-col">
+    <header class="topbar">
+      <button class="icon-btn only-mobile" id="open-sidebar" aria-label="Show history">☰</button>
+      <div class="topbar-spacer"></div>
+      <button class="status" id="status-btn" aria-haspopup="dialog" aria-expanded="false" aria-controls="status-pop">
+        <span id="status-dots" class="status-dots"></span>
+        <span id="status-text">Checking your AIs…</span>
+      </button>
+      <div class="popover" id="status-pop" role="dialog" aria-label="Your AIs" hidden></div>
+    </header>
+    <main id="view" class="view" tabindex="-1"></main>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<script type="module" src="assets/app.js"></script>
+</body>
+</html>

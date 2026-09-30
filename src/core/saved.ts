@@ -71,3 +71,20 @@ export function finalPositions(saved: SavedBattle): Map<string, string> {
 export function savedAnswer(saved: SavedBattle): string {
   return saved.verdict?.answer ?? saved.verdictText;
 }
+
+/** A saved battle in the shape the renderers take, with real names restored. */
+export function savedToResult(saved: SavedBattle): BattleResult {
+  const nameOf = new Map(saved.agents.map((a) => [a.id, a.name]));
+  return {
+    topic: saved.topic,
+    length: saved.length,
+    rounds: saved.rounds,
+    verdict: saved.verdict,
+    verdictText: saved.verdictText,
+    judges: saved.judges,
+    names: new Map(saved.labels.map(([id, label]) => [label, nameOf.get(id) ?? label])),
+    labels: new Map(saved.labels),
+    dropped: [],
+    ...(saved.followUpOf ? { followUpOf: saved.followUpOf } : {}),
+  };
+}

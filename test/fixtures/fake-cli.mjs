@@ -12,7 +12,8 @@ const listed = (v) => (process.env[v] ?? "").split(",").includes(cli);
 if (process.env.FAKE_LOG) appendFileSync(process.env.FAKE_LOG, JSON.stringify({ cli, args }) + "\n");
 
 const stdin = () => (process.stdin.isTTY ? "" : readFileSync(0, "utf8"));
-const delay = Number(process.env.FAKE_DELAY_MS ?? 0);
+// Like the real ones, Grok (via Cursor) is the slowest and Claude the quickest.
+const delay = Number(process.env.FAKE_DELAY_MS ?? 0) * ({ claude: 1, codex: 1.6, "cursor-agent": 2.4 }[cli] ?? 1) * (0.7 + Math.random() * 0.6);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const LEAK_VARS = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "CURSOR_API_KEY"];
@@ -27,6 +28,16 @@ function answer(prompt, who) {
       return "I think Debater A won, honestly.";
     }
     const labels = [...new Set([...prompt.matchAll(/### (Debater [A-Z])/g)].map((m) => m[1]))];
+    if (process.env.FAKE_RICH) {
+      return JSON.stringify({
+        answer: "**Start with a modular monolith.** Most small teams ship faster with one deployable and clear internal modules, and can split out a service later when a boundary is proven. Adopt services early only for clearly different workloads such as GPU jobs.",
+        agreement: "strong",
+        consensus: ["Microservices mainly solve multi-team coordination problems small teams don't have yet.", "Module boundaries should be enforced from day one so a later split is cheap."],
+        disagreements: [{ point: "How costly is splitting later?", sides: [{ debaters: [labels[0]], view: "Bounded and predictable if modules own their data." }, { debaters: labels.slice(1), view: "Data gravity makes the first extraction expensive; plan for it early." }] }],
+        scorecard: labels.map((d, i) => ({ debater: d, position: ["Monolith first, split on proven boundaries", "Monolith first, enforce data ownership early", "Monolith by default, services for odd workloads"][i % 3], strength: ["Clear decision rule", "Sharp point on data ownership", "Concrete examples"][i % 3], weakness: ["Understated migration cost", "Slightly abstract", "Overconfident early on"][i % 3], criteria: { accuracy: 5 - (i % 2), reasoning: 4 + (i === 1 ? 1 : 0), engagement: 4, calibration: 3 + (i % 2) } })),
+        winner: { debater: labels[1] ?? labels[0], reason: `${labels[1] ?? labels[0]} made the sharpest point about data ownership and changed its mind where the others were right.` },
+      });
+    }
     return JSON.stringify({
       answer: `Consolidated answer by ${who}. **Bold** point.`,
       agreement: "partial",
@@ -40,6 +51,22 @@ function answer(prompt, who) {
     });
   }
   const round = prompt.includes("This is ROUND") ? "revised" : "opening";
+  if (process.env.FAKE_RICH) {
+    const name = { claude: "Claude", codex: "GPT", "cursor-agent": "Grok" }[cli];
+    return [
+      round === "revised" ? "## Rebuttals\n**Debater A** overstates the migration cost; a monolith with clear modules splits cleanly later.\n" : "",
+      `## ${round === "revised" ? "Revised position" : "Position"}`,
+      `${name} thinks **a modular monolith** is the right default for most small teams, with a few services only where a boundary is obvious.`,
+      "## Arguments",
+      "1. **Fewer moving parts.** One deploy, one database, local transactions.",
+      "2. **Boundaries are unclear early.** Splitting too soon bakes in the wrong seams.",
+      "3. **Tooling is cheap now,** but the `distributed-systems tax` is not: retries, idempotency, tracing.",
+      "## Caveats",
+      "- Different scaling needs (GPU work, spiky batch jobs) can justify a service on day one.",
+      "## Confidence",
+      `${70 + Math.floor(Math.random() * 20)}%, because the evidence is mostly practitioner experience.`,
+    ].join("\n");
+  }
   return `## ${round === "revised" ? "Revised position" : "Position"}\n${who} ${round} position.\n## Confidence\n70%`;
 }
 

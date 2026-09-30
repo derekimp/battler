@@ -12,6 +12,7 @@ First public version.
 - `short`, `medium` and `long` battles.
 - Live terminal progress, a styled verdict, and a web report (`--open`) with each round side by side.
 - `battler setup` wizard and interactive mode.
+- `battler serve`: a local web app with live progress, history, follow-ups and more rounds; `--lan` for phones on the same Wi-Fi, protected by an access token.
 - `battler continue`: ask a follow-up question with the last battle as background, or add more rounds to it. Interactive mode offers follow-ups after each verdict.
 - Markdown and `--json` output for scripts.
 - Chinese, Japanese and Korean topics render correctly in the terminal (double-width characters, line breaks without spaces).

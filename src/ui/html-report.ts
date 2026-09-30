@@ -32,8 +32,6 @@ function tagNames(html: string, names: string[]): string {
 /** A complete, self-contained HTML page for one battle. */
 export function renderHtmlReport(result: BattleResult, date = new Date()): string {
   const names = [...result.names.values()];
-  const inl = (s: string) => tagNames(inlineHtml(s), names);
-  const v = namedVerdict(result);
   const judged =
     result.judges.length === 1
       ? `judged by ${escapeHtml(result.judges[0])}`
@@ -47,6 +45,50 @@ export function renderHtmlReport(result: BattleResult, date = new Date()): strin
     date.toISOString().slice(0, 16).replace("T", " "),
   ].join(" · ");
 
+  const verdictHtml = renderVerdictHtml(result);
+
+  const rounds = renderRoundsHtml(result);
+
+  const dropped = result.dropped.length
+    ? `<p class="dropped">Dropped: ${result.dropped.map((d) => `${escapeHtml(d.agentName)} (round ${d.round}): ${escapeHtml(d.error.split("\n")[0])}`).join("; ")}</p>`
+    : "";
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(result.topic)} · battler</title>
+<style>${CSS}</style>
+</head>
+<body>
+<main>
+<header class="top">
+  <div class="brand">battler</div>
+  ${result.followUpOf ? `<p class="muted followup">Follow-up to: ${escapeHtml(result.followUpOf)}</p>` : ""}
+  <h1>${escapeHtml(result.topic)}</h1>
+  <div class="meta">${chips}<span class="muted">${meta}</span></div>
+  ${dropped}
+</header>
+${verdictHtml}
+<section class="transcript">
+  <h2>Transcript</h2>
+  <p class="muted">Debaters saw each other, and the judges saw them, only as "Debater A/B/C", shuffled each battle. Real names are shown here.</p>
+  ${rounds}
+</section>
+<footer>Made with <strong>battler</strong>: AI subscriptions debating each other.</footer>
+</main>
+</body>
+</html>
+`;
+}
+
+
+/** The verdict: answer, winner, agreed / still debated, scorecard. Shared with the web UI. */
+export function renderVerdictHtml(result: BattleResult): string {
+  const names = [...result.names.values()];
+  const inl = (s: string) => tagNames(inlineHtml(s), names);
+  const v = namedVerdict(result);
   let verdictHtml: string;
   if (!v) {
     verdictHtml = `<section class="card verdict"><div class="eyebrow">Verdict</div>${tagNames(markdownToHtml(revealNames(result.verdictText, result.names)), names)}</section>`;
@@ -111,57 +153,33 @@ ${
 }`;
   }
 
-  const rounds = result.rounds
+  return verdictHtml;
+}
+
+/** One debater's turn as a card, with names revealed and Markdown rendered safely. */
+export function renderTurnHtml(t: { agentName: string; text: string; ms: number }, names: Map<string, string>): string {
+  return `<article class="turn" style="--c:${htmlColor(t.agentName)}">
+  <header><span class="name">${escapeHtml(t.agentName)}</span><span class="muted">${secs(t.ms)}</span></header>
+  <div class="md">${tagNames(markdownToHtml(revealNames(t.text, names)), [...names.values()])}</div>
+</article>`;
+}
+
+/** Every round, each debater's turn side by side; the last round starts open. */
+export function renderRoundsHtml(result: BattleResult): string {
+  return result.rounds
     .map((turns, i) => {
       const title = i === 0 ? "Opening statements" : "Rebuttals and revisions";
-      const cards = turns
-        .map(
-          (t) => `<article class="turn" style="--c:${htmlColor(t.agentName)}">
-  <header><span class="name">${escapeHtml(t.agentName)}</span><span class="muted">${secs(t.ms)}</span></header>
-  <div class="md">${tagNames(markdownToHtml(revealNames(t.text, result.names)), names)}</div>
-</article>`,
-        )
-        .join("\n");
+      const cards = turns.map((t) => renderTurnHtml(t, result.names)).join("\n");
       return `<details class="round"${i === result.rounds.length - 1 ? " open" : ""}>
   <summary><span>Round ${i + 1}</span> ${title}</summary>
   <div class="turns">${cards}</div>
 </details>`;
     })
     .join("\n");
-
-  const dropped = result.dropped.length
-    ? `<p class="dropped">Dropped: ${result.dropped.map((d) => `${escapeHtml(d.agentName)} (round ${d.round}): ${escapeHtml(d.error.split("\n")[0])}`).join("; ")}</p>`
-    : "";
-
-  return `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeHtml(result.topic)} · battler</title>
-<style>${CSS}</style>
-</head>
-<body>
-<main>
-<header class="top">
-  <div class="brand">battler</div>
-  ${result.followUpOf ? `<p class="muted followup">Follow-up to: ${escapeHtml(result.followUpOf)}</p>` : ""}
-  <h1>${escapeHtml(result.topic)}</h1>
-  <div class="meta">${chips}<span class="muted">${meta}</span></div>
-  ${dropped}
-</header>
-${verdictHtml}
-<section class="transcript">
-  <h2>Transcript</h2>
-  <p class="muted">Debaters saw each other, and the judges saw them, only as "Debater A/B/C", shuffled each battle. Real names are shown here.</p>
-  ${rounds}
-</section>
-<footer>Made with <strong>battler</strong>: AI subscriptions debating each other.</footer>
-</main>
-</body>
-</html>
-`;
 }
+
+/** The report's stylesheet; the web UI reuses it so verdicts look the same everywhere. */
+export const REPORT_CSS = () => CSS;
 
 const CSS = `
 :root{--bg:#f6f5f2;--card:#fff;--ink:#1d1d1f;--muted:#6e6e73;--line:#e4e2dc;--soft:#f0eee9;--green:#1f8a5b;--amber:#b7791f;--red:#c0392b;

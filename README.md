@@ -130,6 +130,24 @@ npm link             # puts `battler` on your PATH
 ```
 </details>
 
+## The web app
+
+```bash
+battler serve
+```
+
+Opens battler in your browser at `http://localhost:4747`. Everything the terminal does, with a friendlier face:
+type a question (or pick an example), choose debaters and length, and watch each AI's answer arrive live,
+round by round, followed by the verdict and scorecard. Every battle lands in the history sidebar, and a bar at
+the bottom lets you ask a follow-up or add a round.
+
+It runs only on your Mac, with the same CLIs and subscriptions as the terminal, and saves battles to the same
+folder (`./battles`, or `"out"` in your config).
+
+- **From your phone:** `battler serve --lan` prints a link with a one-time access token that works on the same
+  Wi-Fi. Anyone with that link can start battles on your subscriptions, so keep it private.
+- `--port 5000` picks another port; `--no-open` skips opening the browser.
+
 ## Usage
 
 ```bash
@@ -280,6 +298,10 @@ test/           node:test suites; fixtures/ holds the fake CLIs
 src/core/panel.ts  merging several judges' verdicts into one
 src/ui/         terminal rendering (live progress, verdict view) and the web report
 src/lineup.ts   choosing debaters: auto-detection, Cursor stand-ins, the default judge
+src/plan.ts     turning a request into a battle (lineup, judges, continue)
+src/run.ts      running a battle and saving its files
+src/server.ts   `battler serve`: local HTTP server + live progress over Server-Sent Events
+web/            the web app (plain HTML, CSS and JavaScript; no build step)
 src/cli.ts      terminal front end
 src/config.ts   config file loader
 ```
