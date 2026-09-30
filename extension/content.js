@@ -15,26 +15,35 @@
       composer: ["#prompt-textarea", "div.ProseMirror[contenteditable='true']", "textarea[name='prompt-textarea']", "form textarea"],
       send: ["button[data-testid='send-button']", "#composer-submit-button", "button[aria-label*='Send' i]"],
       stop: ["button[data-testid='stop-button']", "button[aria-label*='Stop' i]"],
-      replies: ["[data-message-author-role='assistant']"],
-      replyBody: [".markdown", ".prose"],
-      loggedOut: ["[data-testid='login-button']", "a[href*='auth/login']", "button[data-testid='welcome-login-button']"],
+      // Checked 2026-09-30: replies are units keyed "…:assistant"; the message itself sits in
+      // [data-chatgpt-selection-message-id] (the unit also holds a hidden "ChatGPT said:").
+      replies: ["[data-content-search-unit-key$=':assistant']", "[data-chatgpt-search-unit-key$=':assistant']", "[data-message-author-role='assistant']"],
+      replyBody: ["[data-chatgpt-selection-message-id]", ".markdown", ".prose", ":scope"],
+      loggedOut: ["[data-testid='login-button']", "button[data-testid='welcome-login-button']"],
     },
     "claude.ai": {
-      composer: ["div.ProseMirror[contenteditable='true']", "[contenteditable='true'][aria-label*='prompt' i]", "fieldset [contenteditable='true']"],
-      send: ["button[aria-label='Send message']", "button[aria-label*='Send' i]"],
+      // Checked 2026-09-30: composer is a tiptap/ProseMirror div; replies are
+      // [data-testid=assistant-message] with data-is-streaming; the text is in .standard-markdown
+      // (the message also holds a hidden "Claude responded:" and a timestamp).
+      composer: ["[data-testid='chat-input'][contenteditable='true']", "div.ProseMirror[contenteditable='true']", "[contenteditable='true'][aria-label*='prompt' i]"],
+      send: ["button[data-testid='chat-input-send']", "button[aria-label='Send message']", "button[aria-label*='Send' i]"],
       stop: ["button[aria-label='Stop response']", "button[aria-label*='Stop' i]"],
-      replies: ["[data-is-streaming]", ".font-claude-response", "[data-testid='assistant-message']"],
-      replyBody: [".font-claude-response", ".prose", ":scope"],
+      replies: ["[data-testid='assistant-message']", "[data-is-streaming]"],
+      replyBody: [".standard-markdown", "[data-perf-reply-text]", ".prose"],
       streamingAttr: "data-is-streaming",
       loggedOut: ["a[href='/login']", "button[data-testid='login-with-google']"],
     },
     "grok.com": {
-      composer: ["textarea[aria-label*='Grok' i]", "div.ProseMirror[contenteditable='true']", "form textarea", "textarea"],
-      send: ["button[type='submit'][aria-label*='Submit' i]", "button[aria-label*='Send' i]", "form button[type='submit']"],
+      // Checked 2026-09-30 (signed out): composer is a textarea "Ask Grok anything", submit is
+      // [data-testid=chat-submit]. Signed-out visitors can type too, so "Sign in" in the header is
+      // what tells us the account isn't connected. Reply markup still to be checked signed in.
+      composer: ["textarea[aria-label*='Grok' i]", "div.ProseMirror[contenteditable='true']", "form textarea"],
+      send: ["button[data-testid='chat-submit']", "button[type='submit'][aria-label*='Submit' i]", "form button[type='submit']"],
       stop: ["button[aria-label*='Stop' i]"],
       replies: ["[data-testid='assistant-message']", ".message-bubble:not(.user)", "[class*='message-bubble']"],
       replyBody: [".response-content-markdown", ".prose", ":scope"],
-      loggedOut: ["a[href*='sign-in']", "a[href*='login']"],
+      loggedOut: ["a[href*='sign-in']"],
+      loggedOutText: /^sign in$/i,
     },
   };
 
@@ -70,8 +79,9 @@
 
   function status() {
     const composer = first(driver.composer);
-    const loggedOut = !composer && Boolean(first(driver.loggedOut));
-    return { ready: Boolean(composer), loggedIn: !loggedOut, url: location.href };
+    const byText = driver.loggedOutText && [...document.querySelectorAll("a, button")].some((e) => visible(e) && driver.loggedOutText.test(e.textContent.trim()));
+    const loggedOut = Boolean(first(driver.loggedOut)) || byText;
+    return { ready: Boolean(composer) && !loggedOut, loggedIn: !loggedOut, url: location.href };
   }
 
   /** Put text into the site's composer the way a paste would, so its editor state updates. */
@@ -146,7 +156,7 @@
       if (node.nodeType === Node.TEXT_NODE) return node.textContent.replace(/\s+/g, " ");
       if (node.nodeType !== Node.ELEMENT_NODE) return "";
       const tag = node.tagName.toLowerCase();
-      if (["button", "svg", "style", "script"].includes(tag)) return "";
+      if (["button", "svg", "style", "script"].includes(tag) || node.classList.contains("sr-only")) return "";
       const kids = [...node.childNodes].map(inline).join("");
       if (tag === "strong" || tag === "b") return kids.trim() ? `**${kids.trim()}**` : "";
       if (tag === "em" || tag === "i") return kids.trim() ? `*${kids.trim()}*` : "";
@@ -163,6 +173,7 @@
       if (node.nodeType !== Node.ELEMENT_NODE) return;
       const tag = node.tagName.toLowerCase();
       if (["button", "svg", "style", "script", "nav", "form"].includes(tag)) return;
+      if (node.classList.contains("sr-only")) return; // screen-reader labels like "ChatGPT said:"
       const h = tag.match(/^h([1-6])$/);
       if (h) return void out.push(`${"#".repeat(Number(h[1]))} ${inline(node).trim()}`);
       if (tag === "p") return void out.push(inline(node).trim());
@@ -195,6 +206,12 @@
     };
     block(root);
     return out.filter(Boolean).join("\n\n");
+  }
+
+  // Outside the extension (e.g. pasted into a page to test a driver), expose the steps instead.
+  if (!globalThis.chrome?.runtime?.id) {
+    window.__battlerDriver = { status, ask, toMarkdown };
+    return;
   }
 
   /* ── Messages from the side panel ─────────────────────────────────────── */
