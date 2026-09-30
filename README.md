@@ -116,7 +116,7 @@ Or try it without installing: `npx battler "Is a hot dog a sandwich?"`
 <summary>From source</summary>
 
 ```bash
-git clone https://github.com/<you>/battler.git && cd battler
+git clone https://github.com/derekimp/battler.git && cd battler
 npm install          # also builds dist/
 npm link             # puts `battler` on your PATH
 ```

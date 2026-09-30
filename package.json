@@ -3,6 +3,14 @@
   "version": "0.1.0",
   "description": "Make your AI subscriptions (Claude, ChatGPT, Grok) debate each other, then judge each other blind. No API keys.",
   "author": "derekimp",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/derekimp/battler.git"
+  },
+  "homepage": "https://github.com/derekimp/battler#readme",
+  "bugs": {
+    "url": "https://github.com/derekimp/battler/issues"
+  },
   "type": "module",
   "bin": {
     "battler": "./dist/cli.js"
