@@ -178,3 +178,56 @@ test("if every judge fails, the battle fails with the reason", async () => {
     /No judge could deliver a verdict: limit reached/,
   );
 });
+
+test("resume adds rounds to an earlier battle, keeping its labels", async () => {
+  const a = fakeAgent("a", (p) => (p.includes("ROUND 3") ? "a round 3" : "a earlier"));
+  const b = fakeAgent("b", (p) => (p.includes("ROUND 3") ? "b round 3" : "b earlier"));
+  const judge = fakeAgent("j", (p) => verdictJson(p));
+  const earlier = [
+    [
+      { agentId: "a", agentName: "a", round: 1, text: "a opening", ms: 1 },
+      { agentId: "b", agentName: "b", round: 1, text: "b opening", ms: 1 },
+    ],
+    [
+      { agentId: "a", agentName: "a", round: 2, text: "a revised", ms: 1 },
+      { agentId: "b", agentName: "b", round: 2, text: "b revised", ms: 1 },
+    ],
+  ];
+  const labels = new Map([["a", "Debater B"], ["b", "Debater A"]]);
+  const events: BattleEvent[] = [];
+  const result = await runBattle({
+    topic: "T", agents: [a, b], judges: [judge], rounds: 1, length: "medium", labels, resume: earlier, onEvent: (e) => events.push(e),
+  });
+  assert.equal(result.rounds.length, 3);
+  assert.equal(result.resumedFrom, 2);
+  assert.equal(a.prompts.length, 1, "only the new round is asked for");
+  assert.match(a.prompts[0], /This is ROUND 3/);
+  assert.match(a.prompts[0], /<your_position>\na revised/);
+  assert.match(a.prompts[0], /### Debater A\nb revised/, "b keeps the label it had");
+  assert.deepEqual(events.find((e) => e.type === "round-start"), { type: "round-start", round: 3, total: 3, label: "Debate round 3", agents: ["a", "b"] });
+  // The judge sees the whole debate, all three rounds.
+  assert.match(judge.prompts[0], /## Round 1 \(opening\)[\s\S]*## Round 2[\s\S]*## Round 3/);
+  assert.equal(earlier.length, 2, "the saved rounds are not mutated");
+});
+
+test("a follow-up gives each debater the earlier debate as background", async () => {
+  const a = fakeAgent("a");
+  const b = fakeAgent("b");
+  const judge = fakeAgent("j", (p) => verdictJson(p));
+  const result = await runBattle({
+    topic: "What about YAML?",
+    agents: [a, b],
+    judges: [judge],
+    rounds: 1,
+    length: "short",
+    labels: new Map([["a", "Debater A"], ["b", "Debater B"]]),
+    followUp: { topic: "Tabs or spaces?", answer: "Spaces, per Debater B.", finals: new Map([["a", "A said tabs."], ["b", "B said spaces."]]) },
+  });
+  assert.match(a.prompts[0], /^BACKGROUND: this is a follow-up to an earlier debate you took part in, as Debater A\./);
+  assert.match(a.prompts[0], /Earlier question:\nTabs or spaces\?\n\nThe judges' consolidated answer:\nSpaces, per Debater B\./);
+  assert.match(a.prompts[0], /<your_earlier_position>\nA said tabs\.\n<\/your_earlier_position>/);
+  assert.match(a.prompts[0], /<earlier_positions>\n### Debater B\nB said spaces\.\n<\/earlier_positions>/);
+  assert.match(a.prompts[0], /DEBATE TOPIC:\nWhat about YAML\?\n\nThis is the OPENING round of the follow-up\./);
+  assert.match(judge.prompts[0], /follow-up to an earlier one on "Tabs or spaces\?"/);
+  assert.equal(result.followUpOf, "Tabs or spaces?");
+});

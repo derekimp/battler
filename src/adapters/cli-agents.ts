@@ -126,6 +126,7 @@ export function claudeAgent(model?: string): Agent {
   return {
     id: "claude",
     name: "Claude",
+    spec: model ? `claude:${model}` : "claude",
     async ask(prompt: string, opts: AskOptions = {}) {
       const args = [
         "-p",
@@ -204,6 +205,7 @@ export function codexAgent(model?: string): Agent {
   return {
     id: "codex",
     name: "GPT",
+    spec: model ? `codex:${model}` : "codex",
     async ask(prompt: string, opts: AskOptions = {}) {
       let { r, text } = await once(prompt, opts, model ?? codexWorkingModel);
       if (r.code !== 0 && !model && CHATGPT_UNSUPPORTED.test(r.stderr + r.stdout)) {
@@ -257,6 +259,7 @@ export function cursorAgent(model: string, opts: { id?: string; name?: string } 
   return {
     id: opts.id ?? `cursor:${model}`,
     name: opts.name ?? familyName(model),
+    spec: `cursor:${model}`,
     async ask(prompt: string, askOpts: AskOptions = {}) {
       const args = ["-p", "--output-format", "json", "--mode", "ask", "--trust", "--model", model,
         withSystem(prompt, askOpts.system)];

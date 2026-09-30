@@ -61,9 +61,10 @@ export function renderReport(result: BattleResult): string {
     : "";
   const debaters = [...result.names.values()].join(" vs ");
 
+  const context = result.followUpOf ? `*Follow-up to: ${result.followUpOf}*\n\n` : "";
   return `# ${result.topic}
 
-*${debaters} · ${result.rounds.length} round(s) · ${result.length} · judged by ${judgedBy(result.judges)} · ${new Date().toISOString().slice(0, 16).replace("T", " ")}*${dropped}
+${context}*${debaters} · ${result.rounds.length} round(s) · ${result.length} · judged by ${judgedBy(result.judges)} · ${new Date().toISOString().slice(0, 16).replace("T", " ")}*${dropped}
 
 ${renderVerdictMarkdown(result)}
 ---

@@ -1,5 +1,5 @@
 import type { Agent, BattleEvent, BattleResult, Turn } from "./types.ts";
-import { DEBATER_SYSTEM, JUDGE_SYSTEM, debatePrompt, judgePrompt, openingPrompt, type Position } from "./prompts.ts";
+import { DEBATER_SYSTEM, JUDGE_SYSTEM, debatePrompt, followUpBackground, judgePrompt, openingPrompt, type Position } from "./prompts.ts";
 import { mergePanel, type JudgeVerdict } from "./panel.ts";
 import { parseVerdict, type Length } from "./verdict.ts";
 
@@ -11,13 +11,30 @@ export interface BattleOptions {
    * with 3+ debaters each judge's scores for its own turns can be left out.
    */
   judges: Agent[];
-  /** Total rounds including the opening. 1 = opening only, then judge. */
+  /**
+   * Rounds to run. For a new battle this includes the opening (1 = opening only, then judge);
+   * when resuming it's how many more rounds to add.
+   */
   rounds: number;
   length: Length;
   onEvent?: (e: BattleEvent) => void;
   signal?: AbortSignal;
   /** Decides which debater gets which label. Random by default; tests pass a fixed order. */
   shuffle?: <T>(items: T[]) => T[];
+  /** Fixed labels (agent id → "Debater A"), so a continued battle keeps the letters it had. */
+  labels?: Map<string, string>;
+  /** Keep debating an earlier battle on the same topic: the rounds it already has. */
+  resume?: Turn[][];
+  /** Answer a follow-up question, with an earlier battle as background. */
+  followUp?: FollowUp;
+}
+
+export interface FollowUp {
+  /** The earlier battle's topic and consolidated answer. */
+  topic: string;
+  answer: string;
+  /** Each debater's final position in the earlier battle, by agent id. */
+  finals: Map<string, string>;
 }
 
 /**
@@ -39,25 +56,28 @@ export function randomShuffle<T>(items: T[]): T[] {
 }
 
 export async function runBattle(opts: BattleOptions): Promise<BattleResult> {
-  const { topic, rounds, length, onEvent = () => {}, signal, shuffle = randomShuffle } = opts;
-  const labels = new Map(shuffle(opts.agents).map((a, i) => [a.id, anonLabel(i)]));
+  const { topic, length, onEvent = () => {}, signal, shuffle = randomShuffle, followUp } = opts;
+  const labels = opts.labels ?? new Map(shuffle(opts.agents).map((a, i) => [a.id, anonLabel(i)]));
   const names = new Map(opts.agents.map((a) => [labels.get(a.id)!, a.name]));
   onEvent({ type: "start", names });
-  let active = [...opts.agents];
-  const history: Turn[][] = [];
+  const history: Turn[][] = opts.resume ? opts.resume.map((r) => [...r]) : [];
+  // When resuming, only debaters who have a position in the last round can carry on.
+  let active = history.length ? opts.agents.filter((a) => history.at(-1)!.some((t) => t.agentId === a.id)) : [...opts.agents];
   const dropped: BattleResult["dropped"] = [];
+  const first = history.length + 1;
+  const last = history.length + opts.rounds;
 
-  for (let round = 1; round <= rounds; round++) {
+  for (let round = first; round <= last; round++) {
     if (active.length < 2) break;
     const label = round === 1 ? "Opening statements" : `Debate round ${round}`;
-    onEvent({ type: "round-start", round, label, agents: active.map((a) => a.name) });
+    onEvent({ type: "round-start", round, total: last, label, agents: active.map((a) => a.name) });
 
     const prev = history.at(-1);
     const settled = await Promise.allSettled(
       active.map(async (agent): Promise<Turn> => {
         let prompt: string;
         if (round === 1) {
-          prompt = openingPrompt(topic, length);
+          prompt = openingPrompt(topic, length, followUp && followUpBackground(followUp, agent.id, labels));
         } else {
           const own = prev!.find((t) => t.agentId === agent.id)!.text;
           const others = prev!
@@ -99,7 +119,7 @@ export async function runBattle(opts: BattleOptions): Promise<BattleResult> {
       .map((t): Position => ({ label: labels.get(t.agentId)!, text: t.text }))
       .sort((a, b) => a.label.localeCompare(b.label)),
   }));
-  const prompt = judgePrompt(topic, positions, length);
+  const prompt = judgePrompt(topic, positions, length, followUp);
 
   // A judge whose own debate turns failed probably can't judge either.
   const judges = opts.judges.filter((j) => !dropped.some((d) => d.agentName === j.name) || opts.judges.length === 1);
@@ -150,6 +170,9 @@ export async function runBattle(opts: BattleOptions): Promise<BattleResult> {
     verdictText: done[0].text,
     judges: (parsed.length ? parsed.map((p) => p.judgeName) : [done[0].judge.name]),
     names,
+    labels,
     dropped,
+    ...(followUp ? { followUpOf: followUp.topic } : {}),
+    ...(opts.resume?.length ? { resumedFrom: opts.resume.length } : {}),
   };
 }

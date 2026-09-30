@@ -11,6 +11,8 @@ export interface Agent {
   id: string;
   /** Display name, e.g. "Claude". */
   name: string;
+  /** How to recreate this agent later (e.g. "claude:opus", "cursor:gpt-5.5-medium"). */
+  spec?: string;
   ask(prompt: string, opts?: AskOptions): Promise<string>;
   /** Cheap readiness check (installed + logged in). Returns an error message or null. */
   check(): Promise<string | null>;
@@ -42,13 +44,19 @@ export interface BattleResult {
   judges: string[];
   /** "Debater A" -> real name. */
   names: Map<string, string>;
+  /** Agent id -> "Debater A". Saved so a follow-up keeps the same letters. */
+  labels?: Map<string, string>;
   /** Agents that failed and were dropped, with the reason. */
   dropped: { agentName: string; round: number; error: string }[];
+  /** Set when this battle answered a follow-up to an earlier topic. */
+  followUpOf?: string;
+  /** Set when this battle continued an earlier one: how many rounds it already had. */
+  resumedFrom?: number;
 }
 
 export type BattleEvent =
   | { type: "start"; names: Map<string, string> }
-  | { type: "round-start"; round: number; label: string; agents: string[] }
+  | { type: "round-start"; round: number; total: number; label: string; agents: string[] }
   | { type: "turn-done"; turn: Turn }
   | { type: "turn-failed"; round: number; agentName: string; error: string }
   | { type: "judge-start"; judges: string[] }

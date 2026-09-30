@@ -132,7 +132,7 @@ npm link             # puts `battler` on your PATH
 ## Usage
 
 ```bash
-battler                                               # asks for the topic and length
+battler                                               # asks for the topic and length, then offers follow-ups
 battler "Is Rust better than Go for backend services?"
 battler -s "Tabs or spaces?"                          # short: quick answer and winner, ~1 min
 battler -L "Should we rewrite the monolith?"          # long: detailed verdict with strengths and weaknesses
@@ -143,10 +143,29 @@ battler -a claude:opus,codex,grok:grok-4.7-high "…"   # pick a model per debat
 pbpaste | battler                                      # topic from stdin
 ```
 
+### Follow-ups and more rounds
+
+Every battle is saved, so you can keep it going:
+
+```bash
+battler continue "What if they mainly want to build websites?"   # follow-up question
+battler continue                                                   # one more round, same topic
+battler continue -r 2                                              # two more rounds
+battler continue --from battles/2026-09-30-…-tabs-or-spaces.html "…"   # a specific battle, not the latest
+```
+
+- **A follow-up** is a new debate on your new question. Each AI first sees the earlier question, the judges'
+  answer, its own final position and everyone else's, then argues the follow-up. Same debaters, same
+  "Debater A/B/C" letters.
+- **More rounds** continue the same debate from where it stopped: everyone rebuts the latest positions, then
+  the judges score the whole debate again.
+- Running plain `battler` in a terminal asks after each verdict: type a follow-up, `more` for another
+  round, or press Enter to finish.
+
 In a terminal the verdict is drawn as shown above. When stdout is piped, it's written as Markdown
 (`battler "…" > answer.md`), and `--json` gives structured output for scripts.
 Every battle also saves a report to `./battles/`: a web page (`.html`) with the verdict, scorecard and each
-round side by side, and the same as Markdown (`.md`). `--open` opens the web page when the battle finishes.
+round side by side, the same as Markdown (`.md`), and the battle itself (`.json`) for `battler continue`. `--open` opens the web page when the battle finishes.
 
 | Option | Default | |
 |---|---|---|
@@ -156,6 +175,7 @@ round side by side, and the same as Markdown (`.md`). `--open` opens the web pag
 | `-r, --rounds` | 2 | Total rounds including the opening, 1-5 |
 | `-o, --out` | `./battles` | Where reports are saved |
 | `--open` | | Open the web report in your browser afterwards |
+| `--from` | the latest battle | With `continue`: which battle to continue (its `.html`, `.md` or `.json`) |
 | `--json` | | Print the verdict as JSON |
 | `--doctor` | | Check each CLI is installed and on a subscription login |
 

@@ -17,11 +17,42 @@ const BUDGET: Record<Length, { opening: number; debate: number }> = {
   long: { opening: 700, debate: 900 },
 };
 
-export function openingPrompt(topic: string, length: Length): string {
-  return `DEBATE TOPIC:
+export interface FollowUpContext {
+  topic: string;
+  answer: string;
+  finals: Map<string, string>;
+}
+
+/**
+ * What a debater is told about the earlier battle before a follow-up question: the old question,
+ * the judges' answer, its own final position and everyone else's (under their same labels).
+ */
+export function followUpBackground(f: FollowUpContext, agentId: string, labels: Map<string, string>): string {
+  const own = f.finals.get(agentId);
+  const others = [...f.finals]
+    .filter(([id]) => id !== agentId && labels.has(id))
+    .map(([id, text]) => ({ label: labels.get(id)!, text }))
+    .sort((a, b) => a.label.localeCompare(b.label))
+    .map((o) => `### ${o.label}\n${o.text}`)
+    .join("\n\n");
+  return `BACKGROUND: this is a follow-up to an earlier debate you took part in, as ${labels.get(agentId) ?? "one of the debaters"}.
+
+Earlier question:
+${f.topic}
+
+The judges' consolidated answer:
+${f.answer}
+${own ? `\nYour final position then:\n<your_earlier_position>\n${own}\n</your_earlier_position>\n` : ""}${
+    others ? `\nThe other debaters' final positions then:\n<earlier_positions>\n${others}\n</earlier_positions>\n` : ""
+  }
+Build on that debate rather than repeating it. You may change your mind.`;
+}
+
+export function openingPrompt(topic: string, length: Length, background?: string): string {
+  return `${background ? `${background}\n\n---\n\n` : ""}DEBATE TOPIC:
 ${topic}
 
-This is the OPENING round. Give your position independently.
+This is the OPENING round${background ? " of the follow-up" : ""}. Give your position independently.
 
 Structure your answer as:
 ## Position
@@ -96,6 +127,7 @@ export function judgePrompt(
   topic: string,
   history: { round: number; positions: Position[] }[],
   length: Length,
+  followUp?: FollowUpContext,
 ): string {
   const transcript = history
     .map(
@@ -105,9 +137,12 @@ export function judgePrompt(
     )
     .join("\n\n---\n\n");
   const labels = history[0].positions.map((p) => `"${p.label}"`).join(", ");
+  const context = followUp
+    ? `\nThis debate is a follow-up to an earlier one on "${followUp.topic}", whose answer was:\n${followUp.answer}\nJudge how well the debaters answer the follow-up question.\n`
+    : "";
   return `DEBATE TOPIC:
 ${topic}
-
+${context}
 Full transcript (debater identities are anonymised):
 
 ${transcript}

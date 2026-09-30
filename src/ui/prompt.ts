@@ -67,6 +67,7 @@ export const terminalPrompter: Prompter = {
     process.stderr.write(`  ${st.cyan("?")} ${st.bold(question)} ${st.dim("(↑/↓, enter)")}\n\x1b[?25l`);
     render(true);
 
+    let finished = false;
     return new Promise((resolve) => {
       stdin.setRawMode(true);
       stdin.resume();
@@ -74,7 +75,8 @@ export const terminalPrompter: Prompter = {
       const done = (value: (typeof choices)[number]["value"] | null) => {
         stdin.setRawMode(false);
         stdin.pause();
-        stdin.off("data", onKey);
+        stdin.off("data", onData);
+        finished = true;
         // Collapse the menu to one line showing the answer.
         process.stderr.write(`\x1b[${choices.length + 1}A\x1b[J\x1b[?25h`);
         if (value === null) {
@@ -93,7 +95,19 @@ export const terminalPrompter: Prompter = {
         else return;
         render(false);
       };
-      stdin.on("data", onKey);
+      // Several keys can arrive in one chunk (fast typing, paste, remote terminals).
+      const onData = (data: string) => {
+        for (const key of splitKeys(data)) {
+          onKey(key);
+          if (finished) return;
+        }
+      };
+      stdin.on("data", onData);
     });
   },
 };
+
+/** Split raw terminal input into keys: escape sequences like "\x1b[A" stay whole. */
+export function splitKeys(data: string): string[] {
+  return data.match(/\x1b\[[0-9;]*[A-Za-z~]|\x1bO[A-Za-z]|\x1b|[\s\S]/g) ?? [];
+}

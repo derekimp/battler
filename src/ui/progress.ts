@@ -25,20 +25,29 @@ export class Progress {
   private frame = 0;
   private timer?: NodeJS.Timeout;
   private errors: string[] = [];
-  private totalRounds: number;
   private nameW: number;
   private names: Map<string, string>;
 
-  constructor(opts: { topic: string; agents: string[]; judges: string[]; rounds: number; length: string; skipped: string[] }) {
+  constructor(opts: {
+    topic: string;
+    agents: string[];
+    judges: string[];
+    rounds: number;
+    length: string;
+    skipped: string[];
+    followUpOf?: string;
+  }) {
     const { st } = this;
-    this.totalRounds = opts.rounds;
     this.names = new Map();
     this.nameW = Math.max(...opts.agents.map((n) => n.length), ...opts.judges.map((n) => n.length));
     const w = termWidth(this.out);
     const vs = opts.agents.map((n) => st.fg(debaterColor(n), st.bold(n))).join(st.dim(" vs "));
     this.print("");
-    for (const s of opts.skipped) this.print(`  ${st.yellow("!")} ${st.dim(s)}`);
+    for (const s of opts.skipped) this.print(`  ${/^Continuing/.test(s) ? st.cyan("↻") : st.yellow("!")} ${st.dim(s)}`);
     this.print(`  ${vs}`);
+    if (opts.followUpOf) {
+      for (const line of wrap(`Follow-up to: ${opts.followUpOf}`, w - 4)) this.print(`  ${st.dim(line)}`);
+    }
     for (const line of wrap(opts.topic.replace(/\*\*|`/g, ""), w - 4)) this.print(`  ${st.bold(line)}`);
     this.print(st.dim(`  ${opts.length} · ${opts.rounds} round${opts.rounds > 1 ? "s" : ""} · judged by ${describeJudges(opts.judges)}`));
     if (this.live) {
@@ -55,7 +64,7 @@ export class Progress {
         return;
       case "round-start":
         return this.phase(
-          `Round ${e.round}/${this.totalRounds} · ${e.round === 1 ? "Opening statements" : "Rebuttals and revisions"}`,
+          `Round ${e.round}/${e.total} · ${e.round === 1 ? "Opening statements" : "Rebuttals and revisions"}`,
           e.agents,
         );
       case "turn-done":

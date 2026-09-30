@@ -145,6 +145,7 @@ ${
 <main>
 <header class="top">
   <div class="brand">battler</div>
+  ${result.followUpOf ? `<p class="muted followup">Follow-up to: ${escapeHtml(result.followUpOf)}</p>` : ""}
   <h1>${escapeHtml(result.topic)}</h1>
   <div class="meta">${chips}<span class="muted">${meta}</span></div>
   ${dropped}
@@ -174,6 +175,7 @@ h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute
 h3{font-size:16px;margin:0 0 8px}
 p{margin:0 0 10px}
 .muted{color:var(--muted)}
+.followup{margin:6px 0 -4px;font-size:15px}
 .brand{font-weight:700;color:var(--muted);font-size:14px;letter-spacing:.02em}
 .meta{display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:14px}
 .chip{border:1.5px solid var(--c);color:var(--c);border-radius:999px;padding:1px 10px;font-weight:600;font-size:13px}

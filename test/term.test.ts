@@ -86,3 +86,10 @@ test("mixed English and Chinese keeps the spaces English needs", () => {
   assert.deepEqual(wrap("Use spaces 而不是 tabs", 40), ["Use spaces 而不是 tabs"]);
   assert.deepEqual(wrap("hello world", 5), ["hello", "world"]);
 });
+
+test("splitKeys keeps arrow-key escape sequences whole", async () => {
+  const { splitKeys } = await import("../src/ui/prompt.ts");
+  assert.deepEqual(splitKeys("\x1b[A\r"), ["\x1b[A", "\r"]);
+  assert.deepEqual(splitKeys("\x1b[B\x1b[Bj2\r"), ["\x1b[B", "\x1b[B", "j", "2", "\r"]);
+  assert.deepEqual(splitKeys("\x1b"), ["\x1b"]);
+});

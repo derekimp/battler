@@ -50,7 +50,7 @@ test("piped stdout gets Markdown; progress goes to stderr", () => {
   assert.match(r.stderr, /Round 1\/2 · Opening statements/);
   assert.match(r.stderr, /Round 2\/2/);
   assert.match(r.stderr, /Report: battles\/.*\.html/);
-  assert.deepEqual(readdirSync(join(r.dir, "battles")).map((f) => f.split(".").pop()).sort(), ["html", "md"]);
+  assert.deepEqual(readdirSync(join(r.dir, "battles")).map((f) => f.split(".").pop()).sort(), ["html", "json", "md"]);
 });
 
 test("topic can come from stdin", () => {
@@ -172,4 +172,50 @@ test("report file names keep non-English topics", () => {
   assert.match(out.report, /-留学机构做ai方向可以吗\.html$/);
   const long = JSON.parse(battler(["--json", "-s", "现在开一个美澳留学机构，专注AI及相关项目申请，从帮家长学生建立信任"]).stdout);
   assert.match(long.report, /\d-现在开一个美澳留学机构-专注ai及相关项目\.html$/, "long CJK names are capped by width");
+});
+
+test("continue: more rounds on the last battle, then a follow-up question with it as background", () => {
+  const dir = mkdtempSync(join(tmpdir(), "cont-"));
+  const log = join(dir, "calls.jsonl");
+  const env = { FAKE_LOG: log };
+  const out = join(dir, "battles");
+  const first = JSON.parse(battler(["--json", "-s", "-o", out, "Tabs or spaces?"], env).stdout);
+  assert.equal(JSON.parse(readFileSync(first.saved, "utf8")).rounds.length, 2);
+
+  // More rounds: same topic, one more round by default, same debaters.
+  const more = battler(["continue", "--json", "-o", out], env);
+  assert.equal(more.status, 0, more.stderr);
+  const moreOut = JSON.parse(more.stdout);
+  assert.equal(moreOut.topic, "Tabs or spaces?");
+  const moreSaved = JSON.parse(readFileSync(moreOut.saved, "utf8"));
+  assert.equal(moreSaved.rounds.length, 3);
+  assert.deepEqual(moreSaved.labels, JSON.parse(readFileSync(first.saved, "utf8")).labels, "labels are kept");
+  assert.match(more.stderr, /Round 3\/3 · Rebuttals and revisions/);
+  assert.match(more.stderr, /Continuing .*\.html · 2 rounds so far/);
+
+  // Follow-up: a new question; debaters get the earlier debate as background.
+  const follow = battler(["continue", "--json", "-o", out, "What about YAML files?"], env);
+  assert.equal(follow.status, 0, follow.stderr);
+  const fo = JSON.parse(follow.stdout);
+  assert.equal(fo.topic, "What about YAML files?");
+  assert.equal(fo.followUpOf, "Tabs or spaces?");
+  assert.match(follow.stderr, /Follow-up to: Tabs or spaces\?/);
+  const cursorPrompts = readFileSync(log, "utf8").trim().split("\n").map((l) => JSON.parse(l))
+    .filter((c) => c.cli === "cursor-agent" && c.args[0] === "-p").map((c) => c.args.at(-1) as string);
+  const opening = cursorPrompts.find((p) => p.includes("What about YAML files?") && p.includes("OPENING round"))!;
+  assert.match(opening, /BACKGROUND: this is a follow-up to an earlier debate you took part in, as Debater [ABC]/);
+  assert.match(opening, /Earlier question:\nTabs or spaces\?/);
+  assert.match(opening, /<your_earlier_position>\n## Revised position\ncursor\[grok-4\.7-medium\] revised position/);
+  assert.match(opening, /<earlier_positions>\n### Debater/);
+  assert.match(readFileSync(fo.transcript, "utf8"), /^# What about YAML files\?\n\n\*Follow-up to: Tabs or spaces\?\*/);
+
+  // --from picks a specific battle, and accepts the .html report path.
+  const again = JSON.parse(battler(["continue", "--json", "-o", out, "--from", first.report, "Why?"], env).stdout);
+  assert.equal(again.followUpOf, "Tabs or spaces?");
+});
+
+test("continue with nothing to continue explains what to do", () => {
+  const r = battler(["continue", "-o", "nowhere", "Q?"]);
+  assert.equal(r.status, 1);
+  assert.match(r.stderr, /no earlier battle found in nowhere\. Run a battle first, or pass --from <report>/);
 });
