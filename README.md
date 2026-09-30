@@ -169,13 +169,11 @@ follow-ups. A **copy & paste** mode does the same with you carrying the messages
 
 It isn't in the Chrome Web Store yet. To try it:
 
-```bash
-git clone https://github.com/derekimp/battler.git && cd battler && npm install
-npm run build:extension
-```
-
-Then open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and pick `dist/extension`.
-Sign in to chatgpt.com, claude.ai and cursor.com, and click the battler icon.
+1. Download `battler-extension-*.zip` from the [latest release](https://github.com/derekimp/battler/releases/latest)
+   and unzip it (or build it yourself with `npm run build:extension`, which makes `dist/extension`).
+2. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and pick the unzipped
+   `battler-extension` folder.
+3. Sign in to chatgpt.com, claude.ai and cursor.com, then click the battler icon.
 
 > Automating a chat website is a grey area in most providers' terms of service. The extension only acts when
 > you start a battle, in visible tabs, one message at a time; copy & paste mode avoids automation entirely.

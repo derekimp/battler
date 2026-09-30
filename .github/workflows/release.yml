@@ -1,6 +1,7 @@
 name: Release
 
-# Push a tag like v0.2.0 to publish that version to npm.
+# Push a tag like v0.2.0 to release that version: a GitHub release, and npm once the repository
+# variable NPM_PUBLISH is set to "true" (after the first manual publish and trusted-publishing setup).
 # Uses npm trusted publishing (OIDC): no token is stored. One-time setup after the first manual
 # `npm publish`: npmjs.com → battler → Settings → Trusted publishing → GitHub Actions,
 # repository derekimp/battler, workflow release.yml.
@@ -24,8 +25,18 @@ jobs:
       - run: npm ci
       - name: Tag matches package.json version
         run: test "v$(node -p 'require("./package.json").version')" = "$GITHUB_REF_NAME"
-      - run: npm publish --access public
-      - name: GitHub release
-        run: gh release create "$GITHUB_REF_NAME" --generate-notes
+      - name: Publish to npm
+        if: vars.NPM_PUBLISH == 'true'
+        run: npm publish --access public
+      - name: GitHub release (unless it was already made by hand)
+        run: gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Attach the Chrome extension
+        run: |
+          npm run build:extension
+          cd dist && cp -r extension battler-extension
+          zip -qr "battler-extension-${GITHUB_REF_NAME#v}.zip" battler-extension
+          gh release upload "$GITHUB_REF_NAME" "battler-extension-${GITHUB_REF_NAME#v}.zip" --clobber
         env:
           GH_TOKEN: ${{ github.token }}
