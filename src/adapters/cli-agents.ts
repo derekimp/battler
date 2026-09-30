@@ -9,7 +9,7 @@
  */
 import { spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Agent, AskOptions } from "../core/types.ts";
 
@@ -84,10 +84,10 @@ function run(
  * Long lines (cursor-agent prints every model it knows) are clipped.
  */
 export function explain(cmd: string, raw: string): string {
-  const detail = raw
-    .trim()
-    .split("\n")
-    .slice(-5)
+  const lines = raw.trim().split("\n");
+  // Some CLIs (Codex) echo the prompt around their errors; the ERROR lines are what matter.
+  const errors = [...new Set(lines.filter((l) => /^\s*(ERROR|Error|error)\b[:\s]/.test(l)).map(cleanErrorLine))];
+  const detail = (errors.length ? errors.slice(-3) : lines.slice(-5))
     .map((l) => (l.length > 300 ? l.slice(0, 300) + "…" : l))
     .join("\n");
   let hint = "";
@@ -104,6 +104,12 @@ export function explain(cmd: string, raw: string): string {
     hint = "not logged in. Run `battler --doctor` for instructions";
   }
   return hint ? `${hint}\n    ${detail.replace(/\n/g, "\n    ")}` : detail;
+}
+
+/** `ERROR: {"error":{"message":"..."}}` → `ERROR: ...` */
+function cleanErrorLine(line: string): string {
+  const message = line.match(/"message"\s*:\s*"((?:[^"\\]|\\.)*)"/)?.[1];
+  return message ? `${line.trim().split(/[:\s]/)[0]}: ${message.replace(/\\"/g, '"')}` : line.trim();
 }
 
 function failure(cmd: string, r: RunResult): Error {
@@ -157,22 +163,61 @@ export function claudeAgent(model?: string): Agent {
   };
 }
 
+/** Codex's own model list (cached by the CLI), best first. */
+export function codexModelCandidates(): string[] {
+  try {
+    const home = process.env.CODEX_HOME || join(homedir(), ".codex");
+    const cache = JSON.parse(readFileSync(join(home, "models_cache.json"), "utf8"));
+    return (cache.models as { slug?: string; visibility?: string; priority?: number; upgrade?: unknown }[])
+      .filter((m) => m.slug && m.visibility === "list" && !m.upgrade)
+      .sort((a, b) => (a.priority ?? 99) - (b.priority ?? 99))
+      .map((m) => m.slug!);
+  } catch {
+    return [];
+  }
+}
+
+const CHATGPT_UNSUPPORTED = /not supported when using Codex with a ChatGPT account/i;
+
+/**
+ * Codex's default model (from ~/.codex/config.toml) can be one a ChatGPT login can't use. When
+ * that happens and the user didn't choose a model, fall back through Codex's own list, and
+ * remember what worked for the rest of the run.
+ */
+let codexWorkingModel: string | undefined;
+export const resetCodexFallback = () => void (codexWorkingModel = undefined);
+
 export function codexAgent(model?: string): Agent {
+  const once = async (prompt: string, opts: AskOptions, m: string | undefined) => {
+    const outFile = join(sandboxDir, `codex-${process.pid}-${Math.random().toString(36).slice(2)}.txt`);
+    const args = ["exec", "--skip-git-repo-check", "--ephemeral", "-s", "read-only", "-o", outFile];
+    if (m) args.push("-m", m);
+    args.push("-");
+    const r = await run("codex", args, { stdin: withSystem(prompt, opts.system), signal: opts.signal });
+    let text = "";
+    try {
+      text = readFileSync(outFile, "utf8").trim();
+    } catch {}
+    rmSync(outFile, { force: true });
+    return { r, text };
+  };
   return {
     id: "codex",
     name: "GPT",
     async ask(prompt: string, opts: AskOptions = {}) {
-      const outFile = join(sandboxDir, `codex-${process.pid}-${Math.random().toString(36).slice(2)}.txt`);
-      const args = ["exec", "--skip-git-repo-check", "--ephemeral", "-s", "read-only", "-o", outFile];
-      if (model) args.push("-m", model);
-      args.push("-");
-      const r = await run("codex", args, { stdin: withSystem(prompt, opts.system), signal: opts.signal });
+      let { r, text } = await once(prompt, opts, model ?? codexWorkingModel);
+      if (r.code !== 0 && !model && CHATGPT_UNSUPPORTED.test(r.stderr + r.stdout)) {
+        const failed = r.stderr.match(/The '([^']+)' model is not supported/)?.[1] ?? codexWorkingModel;
+        for (const candidate of codexModelCandidates().filter((c) => c !== failed).slice(0, 3)) {
+          ({ r, text } = await once(prompt, opts, candidate));
+          if (r.code === 0) {
+            codexWorkingModel = candidate;
+            break;
+          }
+          if (!CHATGPT_UNSUPPORTED.test(r.stderr + r.stdout)) break;
+        }
+      }
       if (r.code !== 0) throw failure("codex", r);
-      let text = "";
-      try {
-        text = readFileSync(outFile, "utf8").trim();
-      } catch {}
-      rmSync(outFile, { force: true });
       if (!text) throw failure("codex (empty response)", r);
       return text;
     },

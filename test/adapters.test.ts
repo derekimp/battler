@@ -112,3 +112,39 @@ test("familyName maps Cursor model ids to a family", () => {
   assert.equal(familyName("gemini-3.7-flash-high"), "Gemini");
   assert.equal(familyName("mystery-1"), "mystery-1");
 });
+
+test("Codex falls back through its own model list when the default isn't allowed on ChatGPT", async () => {
+  const { mkdirSync, writeFileSync } = await import("node:fs");
+  const { resetCodexFallback } = await import("../src/adapters/cli-agents.ts");
+  resetCodexFallback();
+  const home = mkdtempSync(join(tmpdir(), "codex-home-"));
+  mkdirSync(home, { recursive: true });
+  writeFileSync(
+    join(home, "models_cache.json"),
+    JSON.stringify({
+      models: [
+        { slug: "gpt-hidden", visibility: "hide", priority: 0 },
+        { slug: "gpt-new", visibility: "list", priority: 1 },
+        { slug: "gpt-retiring", visibility: "list", priority: 2, upgrade: { model: "gpt-good" } },
+        { slug: "gpt-good", visibility: "list", priority: 3 },
+      ],
+    }),
+  );
+  process.env.CODEX_HOME = home;
+  process.env.FAKE_CODEX_DEFAULT = "gpt-new";
+  process.env.FAKE_CODEX_UNSUPPORTED = "gpt-new";
+
+  assert.match(await codexAgent().ask("hi"), /codex\[gpt-good\] opening/);
+  assert.match(await codexAgent().ask("again"), /codex\[gpt-good\]/, "the working model is remembered");
+  const models = calls().map((c) => (c.args.includes("-m") ? c.args[c.args.indexOf("-m") + 1] : "(default)"));
+  assert.deepEqual(models, ["(default)", "gpt-good", "gpt-good"]);
+
+  // A model the user chose explicitly is never swapped, and the error is readable.
+  await assert.rejects(codexAgent("gpt-new").ask("hi"), (err: Error) => {
+    assert.match(err.message, /isn't available to your codex login/);
+    assert.match(err.message, /ERROR: The 'gpt-new' model is not supported when using Codex with a ChatGPT account\./);
+    assert.doesNotMatch(err.message, /Keep it|user\n|"type"/, "no prompt echo or raw JSON");
+    return true;
+  });
+  resetCodexFallback();
+});

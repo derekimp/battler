@@ -62,7 +62,15 @@ async function main() {
   }
   if (cli === "codex") {
     const out = args[args.indexOf("-o") + 1];
-    const model = args.includes("-m") ? args[args.indexOf("-m") + 1] : "default";
+    const model = args.includes("-m") ? args[args.indexOf("-m") + 1] : (process.env.FAKE_CODEX_DEFAULT ?? "default");
+    if ((process.env.FAKE_CODEX_UNSUPPORTED ?? "").split(",").includes(model)) {
+      // Like the real Codex: the prompt is echoed around the error.
+      const prompt = stdin();
+      console.error(`user\n${prompt.slice(-200)}\nwarning: Model metadata for \`${model}\` not found.`);
+      const err = JSON.stringify({ type: "error", status: 400, error: { type: "invalid_request_error", message: `The '${model}' model is not supported when using Codex with a ChatGPT account.` } });
+      console.error(`ERROR: ${err}\nERROR: ${err}`);
+      process.exit(1);
+    }
     writeFileSync(out, answer(stdin(), `codex[${model}]`));
     return console.log("tokens used\n123");
   }
