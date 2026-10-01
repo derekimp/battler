@@ -7,8 +7,12 @@ on:
 
 jobs:
   test:
-    name: Typecheck and test (macOS, Node 24)
-    runs-on: macos-latest
+    name: Typecheck and test (${{ matrix.os }}, Node 24)
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -37,8 +41,12 @@ jobs:
         run: sh test/smoke.sh
 
   package:
-    name: Package contents
-    runs-on: macos-latest
+    name: Package contents (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -50,3 +58,7 @@ jobs:
           npm pack
           npm install -g ./battler-*.tgz
           PATH="$PWD/test/fixtures/bin:$PATH" battler --doctor
+      - name: Run it with npx, without installing
+        run: |
+          npm uninstall -g battler
+          PATH="$PWD/test/fixtures/bin:$PATH" npx --yes ./battler-*.tgz --doctor

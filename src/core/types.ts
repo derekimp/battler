@@ -52,6 +52,8 @@ export interface BattleResult {
   followUpOf?: string;
   /** Set when this battle continued an earlier one: how many rounds it already had. */
   resumedFrom?: number;
+  /** Compare mode: each AI's answer, not debated or judged (no verdict). */
+  compare?: boolean;
 }
 
 export type BattleEvent =

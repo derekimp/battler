@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+New:
+
+- **Compare mode** (`-c` / **Just compare**): each AI answers once, side by side, with no debate or judging. One message per AI. `battler continue` (or **Have them debate it**) turns a comparison into a full battle.
+- **Sharing:** the web app makes an image of a result to copy or download; `battler share` (or **Create a link**) uploads the report as a secret GitHub Gist with your own `gh` login.
+- **Linux** is supported and tested in CI. `npx battler "…"` runs it without installing.
+
 Hardening against failures:
 
 - A dropped connection, a 5xx or an overloaded service is retried once; a used-up plan, a missing CLI or a bad model isn't.

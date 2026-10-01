@@ -24,11 +24,13 @@ every call uses the subscriptions you already pay for.
 
 - **Uses what you already pay for.** Claude Pro/Max, ChatGPT and Cursor subscriptions, through their own
   official CLIs. API keys are stripped from the environment so nothing is billed per token.
-- **A real debate, not side-by-side answers.** Each AI answers alone, then reads the others, rebuts, concedes
-  and revises. You can ask follow-ups and add rounds.
+- **A real debate, not just side-by-side answers.** Each AI answers alone, then reads the others, rebuts,
+  concedes and revises. You can ask follow-ups and add rounds. (When side by side is all you want, `-c`
+  compares in one quick round.)
 - **Blind, fair judging.** Debaters are "Debater A/B/C" (shuffled every battle), every AI judges, nobody scores
   itself, and the score comes from a fixed checklist rather than the judge's gut.
-- **Local.** Everything runs on your Mac. Battles are saved as files you own.
+- **Local.** Everything runs on your computer. Battles are saved as files you own, and sharing one (an image,
+  or a link) is up to you.
 
 ## Quick start
 
@@ -37,6 +39,8 @@ npm install -g battler
 battler setup      # checks your AI CLIs, helps install and sign in, runs a test battle
 battler serve      # opens the web app
 ```
+
+Just trying it? `npx battler "your question"` runs it without installing anything.
 
 Or stay in the terminal:
 
@@ -48,7 +52,7 @@ battler "Is it still worth learning to code in 2026?"
 
 ## Requirements
 
-- **macOS** (Linux will probably work but isn't tested yet; Windows isn't supported)
+- **macOS or Linux** (Windows isn't supported yet)
 - **Node.js 22** or newer
 - At least **two** of these, each signed in with a subscription, **or just Cursor**:
 
@@ -81,9 +85,10 @@ battler serve
 
 Opens `http://localhost:4747`: type a question (or pick an example), choose debaters and length, and watch
 each answer arrive live, round by round, then the verdict and scorecard. Battles land in the history
-sidebar, and a bar at the bottom asks a follow-up or adds a round.
+sidebar, and a bar at the bottom asks a follow-up, adds a round, or **shares** it as an image or a link.
+**Just compare** skips the debate and shows each AI's answer side by side.
 
-- It runs only on your Mac, with the same CLIs as the terminal, and saves battles to the same folder.
+- It runs only on your computer, with the same CLIs as the terminal, and saves battles to the same folder.
 - **From your phone:** `battler serve --lan` prints a link with a one-time access token for your Wi-Fi.
   Anyone with that link can start battles on your subscriptions, so keep it private.
 - `--port 5000` picks another port; `--no-open` doesn't open the browser.
@@ -94,6 +99,7 @@ sidebar, and a bar at the bottom asks a follow-up or adds a round.
 battler                                               # asks for the topic and length, then offers follow-ups
 battler "Is Rust better than Go for backend services?"
 battler -s "Tabs or spaces?"                          # short: a quick answer and a winner, ~1 min
+battler -c "Best way to learn SQL?"                   # just compare: each answers once, side by side
 battler -L "Should we rewrite the monolith?"          # long: an in-depth verdict
 battler -r 3 "…"                                      # more debate rounds
 battler --open "…"                                    # open the report in your browser afterwards
@@ -116,6 +122,22 @@ battler continue --from battles/…-tabs-or-spaces.html "…"          # a speci
 - **A follow-up** is a new debate on your new question. Each AI first sees the earlier question, the judges'
   answer, its own final position and everyone else's. Same debaters, same "Debater A/B/C" letters.
 - **More rounds** pick up where the debate stopped; the judges then score the whole debate again.
+- **After a comparison** (`-c`), `battler continue` has them debate those answers and judge, turning it into
+  a full battle. A follow-up question to a comparison is compared too (add `-c` or not, it carries over).
+
+### Comparing instead of debating
+
+`battler -c "…"` (or **Just compare** in the web app) asks each AI once and shows the answers side by side:
+no rebuttals, no judges. It's the fastest way to see how they differ and uses one message per AI. If you
+want a verdict after all, `battler continue` (or **Have them debate it**) picks up from those answers.
+
+### Sharing
+
+- **Web app:** **Share** under a battle makes an image of the result (question, winner, answer, scores, or
+  each AI's position for a comparison) to copy or download, and can **create a link** to the full report.
+- **Terminal:** `battler share` uploads your latest battle's report (or `--from` another) as a **secret
+  GitHub Gist** with your own `gh` login and prints the link. Secret means unlisted: anyone with the link can
+  read it. Needs the [GitHub CLI](https://cli.github.com) (`gh auth login`).
 
 ### Output
 
@@ -131,6 +153,7 @@ Markdown (`.md`), and the battle itself (`.json`, used by `battler continue`).
 | `-j, --judge` | `panel` (short: one judge) | `panel`: every debater judges. Or one agent, same format as `--agents` |
 | `-l, --length` | `medium` | `short`, `medium` or `long` (shorthands `-s`, `-m`, `-L`) |
 | `-r, --rounds` | 2 | Rounds including the opening, 1-5 |
+| `-c, --compare` | | Just compare: one round, answers side by side, no judging |
 | `-o, --out` | `./battles` | Where battles are saved |
 | `--open` | | Open the web report afterwards |
 | `--from` | the latest battle | With `continue`: which battle (its `.html`, `.md` or `.json`) |

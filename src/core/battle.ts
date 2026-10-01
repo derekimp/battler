@@ -9,7 +9,8 @@ export interface BattleOptions {
   agents: Agent[];
   /**
    * One judge, or several for a panel. Panel judges should be the debaters themselves, so that
-   * with 3+ debaters each judge's scores for its own turns can be left out.
+   * with 3+ debaters each judge's scores for its own turns can be left out. None: just compare
+   * the answers, with no verdict.
    */
   judges: Agent[];
   /**
@@ -133,12 +134,31 @@ export async function runBattle(opts: BattleOptions): Promise<BattleResult> {
   }
 
   const debaters = new Set(history.flat().map((t) => t.agentId));
-  if (debaters.size < 2) {
+  // A comparison is still worth showing with whoever answered; a debate needs two sides.
+  const compare = !opts.judges.length;
+  if (debaters.size < (compare ? 1 : 2)) {
     if (dropped.length && dropped.every((d) => looksOffline(d.error))) {
       throw new Error("Can't reach the AI services. Check your internet connection and try again.");
     }
     const reasons = dropped.map((d) => `  - ${d.agentName}: ${d.error}`).join("\n");
     throw new Error(`Need at least 2 working debaters, got ${debaters.size}.\n${reasons}`);
+  }
+
+  // Compare mode: everyone's answer side by side, nobody judges.
+  if (compare) {
+    return {
+      topic,
+      length,
+      rounds: history,
+      verdict: null,
+      verdictText: "",
+      judges: [],
+      names,
+      labels,
+      dropped,
+      compare: true,
+      ...(followUp ? { followUpOf: followUp.topic } : {}),
+    };
   }
 
   const positions = history.map((turns, i) => ({

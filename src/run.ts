@@ -95,8 +95,13 @@ export async function runPlan(
       retryDelayMs: opts.retryDelayMs,
     });
   } catch (e) {
-    const hint = savedRounds ? `\nThe ${savedRounds} round${savedRounds === 1 ? "" : "s"} so far are saved; \`battler continue\` will have them judged.` : "";
-    throw new BattleError(`${message(e)}${hint}`, savedRounds ? id : undefined, savedRounds ? jsonFile : undefined);
+    // A comparison is a single round, so there's nothing earlier to pick up.
+    const hint =
+      savedRounds && !plan.compare
+        ? `\n${savedRounds === 1 ? "The first round is" : `The ${savedRounds} rounds so far are`} saved; \`battler continue\` will have them judged.`
+        : "";
+    const resumable = savedRounds && !plan.compare;
+    throw new BattleError(`${message(e)}${hint}`, resumable ? id : undefined, resumable ? jsonFile : undefined);
   }
   if (plan.followUpOf && !result.followUpOf) result.followUpOf = plan.followUpOf;
 

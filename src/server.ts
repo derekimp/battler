@@ -21,6 +21,8 @@ import { continuePlan, newPlan, PlanError, type Plan } from "./plan.ts";
 import { runPlan, type BattleError } from "./run.ts";
 import { htmlColor, REPORT_CSS, renderRoundsHtml, renderTurnHtml, renderVerdictHtml } from "./ui/html-report.ts";
 import { plainPreview } from "./ui/term.ts";
+import { battleSlug } from "./plan.ts";
+import { createGist, shareCard, shareMarkdown } from "./core/share.ts";
 
 export interface ServeOptions {
   port: number;
@@ -30,6 +32,8 @@ export interface ServeOptions {
   config: Config;
   /** Required on every request when set (LAN mode). */
   token?: string;
+  /** For tests: the GitHub CLI used to share links. */
+  gh?: string;
   /** For tests: replaces the CLI readiness checks. */
   checkAgents?: () => Promise<AgentStatus[]>;
 }
@@ -88,8 +92,9 @@ function summary(id: string, saved: SavedBattle) {
     followUpOf: saved.followUpOf ?? null,
     debaters: saved.agents.map((a) => ({ name: a.name, color: htmlColor(a.name) })),
     winner: v ? (v.winner.debater === "Tie" ? null : v.winner.debater) : null,
-    headline: saved.incomplete ? "interrupted" : v ? winnerHeadline(v) : null,
+    headline: saved.incomplete ? "interrupted" : saved.compare ? "answers compared" : v ? winnerHeadline(v) : null,
     incomplete: Boolean(saved.incomplete),
+    compare: Boolean(saved.compare),
   };
 }
 
@@ -102,6 +107,7 @@ function detail(id: string, saved: SavedBattle) {
     verdictHtml: renderVerdictHtml(result),
     roundsHtml: renderRoundsHtml(result),
     reportUrl: `/reports/${encodeURIComponent(id)}.html`,
+    card: saved.incomplete ? null : shareCard(result),
   };
 }
 
@@ -181,6 +187,7 @@ export function startServer(opts: ServeOptions): Server & { stopAll(): void } {
       totalRounds: (plan.resume?.length ?? 0) + plan.rounds,
       debaters: plan.agents.map((a) => ({ name: a.name, color: htmlColor(a.name) })),
       judges: plan.judges.map((j) => j.name),
+      compare: Boolean(plan.compare),
       // File paths mean nothing in the browser: the follow-up line already says what this continues.
       notes: plan.notes.flatMap((n) => {
         if (!n.startsWith("Continuing ")) return [n];
@@ -214,7 +221,7 @@ export function startServer(opts: ServeOptions): Server & { stopAll(): void } {
         emit({
           type: "error",
           // The terminal's "`battler continue` will…" hint; the page offers a button instead.
-          message: job.controller.signal.aborted ? "Stopped." : err.message.replace(/\nThe \d+ rounds? so far are saved;.*$/s, ""),
+          message: job.controller.signal.aborted ? "Stopped." : err.message.replace(/\n(?:The first round is|The \d+ rounds so far are) saved;.*$/s, ""),
           // Rounds saved before the failure can still be judged.
           ...(err.savedId ? { savedId: err.savedId } : {}),
         }),
@@ -260,6 +267,21 @@ export function startServer(opts: ServeOptions): Server & { stopAll(): void } {
       return send(res, 200, detail(id, loadSaved(savedPath(id))));
     }
 
+    const shareMatch = path.match(/^\/api\/battles\/([^/]+)\/share$/);
+    if (method === "POST" && shareMatch) {
+      const id = decodeURIComponent(shareMatch[1]);
+      if (!ID.test(id) || !existsSync(savedPath(id))) return send(res, 404, { error: "No such battle." });
+      const saved = loadSaved(savedPath(id));
+      if (saved.incomplete) throw new PlanError("This battle hasn't finished. Judge it first, then share it.");
+      const result = savedToResult(saved);
+      try {
+        const url = await createGist(shareMarkdown(result), `${battleSlug(saved.topic)}.md`, `battler: ${saved.topic.slice(0, 200)}`, opts.gh);
+        return send(res, 200, { url });
+      } catch (e) {
+        throw new PlanError((e as Error).message);
+      }
+    }
+
     if (method === "POST" && path === "/api/battles") {
       const body = await readJson(req);
       let plan: Plan;
@@ -271,6 +293,7 @@ export function startServer(opts: ServeOptions): Server & { stopAll(): void } {
           rounds: body.rounds === undefined ? undefined : Number(body.rounds),
           config: opts.config,
           judge: body.judge ?? undefined,
+          ...(body.compare !== undefined ? { compare: Boolean(body.compare) } : {}),
         });
       } else {
         plan = await newPlan({
@@ -279,6 +302,7 @@ export function startServer(opts: ServeOptions): Server & { stopAll(): void } {
           rounds: Number(body.rounds ?? opts.config.rounds ?? 2),
           agents: Array.isArray(body.agents) ? body.agents.map(String) : undefined,
           judge: body.judge ?? undefined,
+          compare: Boolean(body.compare),
           config: opts.config,
         });
       }

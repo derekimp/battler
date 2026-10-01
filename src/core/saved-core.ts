@@ -21,6 +21,8 @@ export interface SavedBattle {
   followUpOf?: string;
   /** Saved after a round, before the verdict: the battle stopped (or is still running). */
   incomplete?: boolean;
+  /** Compare mode: the answers side by side, never debated or judged. */
+  compare?: boolean;
 }
 
 /** A battle that stopped before its verdict, from its rounds so far. */
@@ -58,6 +60,7 @@ export function toSaved(result: BattleResult, agents: Agent[], createdAt = new D
     verdictText: result.verdictText,
     judges: result.judges,
     ...(result.followUpOf ? { followUpOf: result.followUpOf } : {}),
+    ...(result.compare ? { compare: true } : {}),
   };
 }
 
@@ -90,6 +93,7 @@ export function savedToResult(saved: SavedBattle): BattleResult {
     labels: new Map(saved.labels),
     dropped: [],
     ...(saved.followUpOf ? { followUpOf: saved.followUpOf } : {}),
+    ...(saved.compare ? { compare: true } : {}),
   };
 }
 
