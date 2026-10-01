@@ -13,7 +13,7 @@
   },
   "type": "module",
   "bin": {
-    "battler": "./dist/bin.js"
+    "battler": "dist/bin.js"
   },
   "engines": {
     "node": ">=22"
