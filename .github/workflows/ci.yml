@@ -26,6 +26,8 @@ jobs:
         run: npm run test:dist
       - name: Build and check the Chrome extension
         run: npm run test:extension
+      - name: The web app in Chrome
+        run: npm run test:web
 
   oldest-node:
     name: Built CLI on the oldest supported Node (22)

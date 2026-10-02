@@ -213,3 +213,40 @@ test("the web API shares a finished battle as a gist and gives the page its card
     server.close();
   }
 });
+
+function cli(args: string[], dir: string, extraPath = "") {
+  return spawnSync(process.execPath, [resolve(ROOT, process.env.BATTLER_ENTRY ?? "src/cli.ts"), ...args], {
+    cwd: dir,
+    encoding: "utf8",
+    env: { PATH: `${extraPath}${FAKE_BIN}:${process.env.PATH}`, HOME: dir, XDG_CONFIG_HOME: join(dir, "config"), NO_COLOR: "1" },
+  });
+}
+
+test("`battler share` uploads the latest battle and prints the link", () => {
+  const dir = mkdtempSync(join(tmpdir(), "battler-share-"));
+  const none = cli(["share"], dir);
+  assert.equal(none.status, 1);
+  assert.match(none.stderr, /no battle to share/);
+
+  assert.equal(cli(["-s", "Tabs or spaces?"], dir).status, 0);
+  const gh = fakeGh("ok");
+  const ghDir = gh.bin.replace(/\/gh$/, "");
+  const r = cli(["share"], dir, `${ghDir}:`);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout.trim(), "https://gist.github.com/someone/abc123");
+  assert.match(r.stderr, /secret GitHub Gist/);
+  assert.match(gh.call().input, /^# Tabs or spaces\?/);
+
+  const out = fakeGh("logged-out");
+  const bad = cli(["share"], dir, `${out.bin.replace(/\/gh$/, "")}:`);
+  assert.equal(bad.status, 1);
+  assert.match(bad.stderr, /gh auth login/);
+});
+
+test("a follow-up to a comparison is compared too, unless it's debated", () => {
+  const dir = mkdtempSync(join(tmpdir(), "battler-cmpf-"));
+  assert.equal(cli(["-c", "Tabs or spaces?"], dir).status, 0);
+  const follow = cli(["continue", "--json", "And for YAML?"], dir);
+  assert.equal(follow.status, 0, follow.stderr);
+  assert.equal(JSON.parse(follow.stdout).compare, true);
+});

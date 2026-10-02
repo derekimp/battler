@@ -176,3 +176,29 @@ test("a battle that fails after some rounds offers them for judging; history mar
     delete process.env.FAKE_FAIL_JUDGE;
   }
 });
+
+test("`battler serve` starts, serves the page, and stops cleanly on Ctrl+C", async () => {
+  const { spawn } = await import("node:child_process");
+  const { resolve } = await import("node:path");
+  const { ROOT } = await import("./helpers.ts");
+  const dir = mkdtempSync(join(tmpdir(), "serve-cli-"));
+  const port = String(20000 + Math.floor(Math.random() * 20000));
+  const child = spawn(process.execPath, [resolve(ROOT, process.env.BATTLER_ENTRY ?? "src/cli.ts"), "serve", "--port", port, "--no-open"], {
+    cwd: dir,
+    env: { ...process.env, PATH: `${FAKE_BIN}:${savedEnv.PATH}`, HOME: dir, XDG_CONFIG_HOME: join(dir, "config"), NO_COLOR: "1" },
+  });
+  let stderr = "";
+  child.stderr.on("data", (d) => (stderr += d));
+  try {
+    for (let i = 0; i < 100 && !stderr.includes("battler is running"); i++) await new Promise((r) => setTimeout(r, 50));
+    assert.match(stderr, new RegExp(`http://localhost:${port}/`));
+    const page = await fetch(`http://localhost:${port}/`);
+    assert.equal(page.status, 200);
+    const exited = new Promise<number | null>((r) => child.once("exit", (code) => r(code)));
+    child.kill("SIGINT");
+    assert.equal(await exited, 0);
+    assert.match(stderr, /Stopped\./);
+  } finally {
+    child.kill("SIGKILL");
+  }
+});
