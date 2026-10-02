@@ -38,6 +38,20 @@ async function ownedTab(site) {
   return tab;
 }
 
+/**
+ * Show a battler tab for a moment, then go back to the tab you were on. Chrome doesn't render
+ * background tabs, and some sites (Gemini's send button, for one) only act when a frame renders.
+ */
+async function showBriefly(tabId) {
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  if (!tab || tab.active) return;
+  const [previous] = await chrome.tabs.query({ active: true, windowId: tab.windowId });
+  await chrome.tabs.update(tabId, { active: true });
+  await sleep(600);
+  if (previous) await chrome.tabs.update(previous.id, { active: true }).catch(() => {});
+  await tuckAway(tab.groupId);
+}
+
 /** Collapse battler's tab group, unless you're looking at one of its tabs (Chrome won't, then). */
 async function tuckAway(groupId) {
   if (!groupId || groupId < 0) return;
@@ -147,6 +161,10 @@ export function tabAgent(site, { onProgress } = {}) {
           };
           port.onMessage.addListener((m) => {
             heard = Date.now();
+            if (m.type === "nudge") {
+              showBriefly(tab.id).finally(() => port.postMessage({ type: "shown" }));
+              return;
+            }
             if (m.type === "progress") onProgress?.(site.id, m.chars);
             else if (m.type === "done") finish(resolve, m.text);
             else if (m.type === "error") finish(reject, new Error(`${site.name}: ${m.error}`));

@@ -36,6 +36,6 @@ test("site notices are refused instead of entering the debate as an answer", () 
 });
 
 test("every supported site has a driver; others are left alone", () => {
-  for (const host of ["chatgpt.com", "claude.ai", "cursor.com"]) assert.ok(driver(host), host);
+  for (const host of ["chatgpt.com", "claude.ai", "gemini.google.com", "cursor.com"]) assert.ok(driver(host), host);
   assert.equal(driver("example.com"), undefined);
 });

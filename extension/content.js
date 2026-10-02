@@ -1,4 +1,4 @@
-// battler content script: runs inside chatgpt.com, claude.ai and cursor.com/agents tabs and does what a
+// battler content script: runs inside chatgpt.com, claude.ai, gemini.google.com and cursor.com/agents tabs and does what a
 // person would do: type the prompt, press send, wait for the reply to finish, and read it back.
 // It only acts when the battler side panel asks it to, one message at a time.
 //
@@ -32,6 +32,37 @@
       replyBody: [".standard-markdown", "[data-perf-reply-text]", ".prose"],
       streamingAttr: "data-is-streaming",
       loggedOut: ["a[href='/login']", "button[data-testid='login-with-google']"],
+    },
+    "gemini.google.com": {
+      // Checked 2026-10-02: a Quill editor (ignores synthetic paste, takes insertText; the send
+      // button ignores synthetic clicks, Enter works), replies are <model-response> with the
+      // answer in message-content .markdown (the hidden thoughts sit outside it), and a "Stop
+      // response" button while it writes. In a background tab the text stays class="pending"
+      // and invisible, so it's read with textContent. Temporary chat is a toggle, not a URL.
+      composer: ["div.ql-editor[contenteditable='true']", "rich-textarea [contenteditable='true']"],
+      send: [],
+      sendWithEnter: true,
+      // Gemini only acts on the send when the page renders a frame, which background tabs don't.
+      sentCount: () => document.querySelectorAll("user-query").length,
+      stop: ["button[aria-label='Stop response']"],
+      replies: ["model-response"],
+      replyBody: ["message-content .markdown", "message-content"],
+      loggedOut: ["a[href*='accounts.google.com/ServiceLogin']", "a[aria-label^='Sign in' i]"],
+      modelPicker: "button.input-area-switch",
+      modelChosen: (model) => (document.querySelector("button.input-area-switch")?.getAttribute("aria-label") ?? "").includes(`currently ${model.split(" ").at(-1)}`),
+      findModelItem: (model) =>
+        [...document.querySelectorAll("[role='menuitem'], [role='menuitemradio'], .mat-mdc-menu-item")].find((e) => e.textContent.includes(model)) ?? null,
+      async prepare() {
+        // Temporary chat: not saved to your Gemini history or used to personalise it.
+        const on = () => [...document.querySelectorAll("button, [role='button'], span, div")].some((e) => e.children.length === 0 && /turn off temporary chat/i.test(e.textContent));
+        if (on()) return;
+        const toggle = await waitFor(() => first(["button[aria-label='Temporary chat']"]), { timeout: 10_000, what: "the temporary chat button" }).catch(() => null);
+        if (!toggle) throw new Error("couldn't turn on Gemini's temporary chat, so battler won't send this into your history. Use copy & paste mode");
+        toggle.click();
+        await waitFor(on, { timeout: 5_000, what: "temporary chat to turn on" }).catch(() => {
+          throw new Error("couldn't turn on Gemini's temporary chat, so battler won't send this into your history. Use copy & paste mode");
+        });
+      },
     },
     "cursor.com": {
       // Checked 2026-09-30 on cursor.com/agents (Grok via Cursor): a contenteditable composer, a
@@ -85,30 +116,75 @@
     return { ready: Boolean(composer) && !loggedOut, loggedIn: !loggedOut, url: location.href };
   }
 
+  const textOf = (el) => (el.value ?? el.textContent ?? "").replace(/\s+/g, "");
+
+  /**
+   * Empty the composer. Sites keep an unsent draft in it (Cursor does, across visits), which would
+   * otherwise go out glued to the prompt. Rich editors keep their own state, so this selects the
+   * box's contents, tells the editor, and deletes the way a key press would.
+   */
+  async function clear(el) {
+    if (!textOf(el)) return;
+    if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
+      Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), "value").set.call(el, "");
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    } else {
+      el.focus();
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      getSelection().removeAllRanges();
+      getSelection().addRange(range);
+      document.dispatchEvent(new Event("selectionchange"));
+      await sleep(80);
+      el.dispatchEvent(new InputEvent("beforeinput", { inputType: "deleteContentBackward", bubbles: true, cancelable: true }));
+      await sleep(150);
+      if (textOf(el)) document.execCommand("delete");
+      // Last resort: one character at a time, while that makes progress.
+      for (let i = 0, left = textOf(el).length, stuck = 0; i < 20_000 && left && stuck < 50; i++) {
+        el.dispatchEvent(new InputEvent("beforeinput", { inputType: "deleteContentBackward", bubbles: true, cancelable: true }));
+        const now = textOf(el).length;
+        stuck = now < left ? 0 : stuck + 1;
+        left = now;
+      }
+      await sleep(150);
+    }
+    if (textOf(el)) throw new Error("couldn't clear what was already in the message box; clear it in the site's tab and try again");
+  }
+
   /** Put text into the site's composer the way a paste would, so its editor state updates. */
   async function insert(el, text) {
     el.focus();
+    await clear(el);
     if (el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement) {
       const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), "value").set;
       setter.call(el, text);
       el.dispatchEvent(new Event("input", { bubbles: true }));
-      return;
+    } else {
+      // Rich editors (ProseMirror, Lexical, tiptap) handle paste events best. Some apply the paste
+      // a moment later, so wait before deciding it didn't work, or the text ends up in there twice.
+      const data = new DataTransfer();
+      data.setData("text/plain", text);
+      el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+      await sleep(350);
+      if (!textOf(el)) document.execCommand("insertText", false, text);
+      await sleep(100);
     }
-    // Rich editors (ProseMirror, Lexical, tiptap) handle paste events best. Some apply the paste a
-    // moment later, so wait before deciding it didn't work, or the text ends up in there twice.
-    const data = new DataTransfer();
-    data.setData("text/plain", text);
-    el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
-    await sleep(350);
-    if (!el.textContent.trim()) document.execCommand("insertText", false, text);
+    // The box should hold this prompt and nothing else.
+    const got = textOf(el);
+    const want = text.replace(/\s+/g, "");
+    if (!got.startsWith(want.slice(0, 40)) || got.length > want.length * 1.05 + 20) {
+      throw new Error("the message box didn't take the prompt cleanly, so it wasn't sent; try again, or use copy & paste mode");
+    }
   }
 
   /** Pick a model in the site's model menu, if it has one and it isn't already chosen. */
   async function chooseModel(model) {
     if (!driver.modelPicker || !model) return;
+    if (driver.modelChosen?.(model)) return;
     const trigger = await waitFor(() => first([driver.modelPicker]), { timeout: 15_000, what: "the model menu" });
     trigger.click();
-    const item = await waitFor(() => first([driver.modelItem(model)]), { timeout: 5_000, what: `the model ${model}` }).catch(() => null);
+    const findItem = () => (driver.findModelItem ? driver.findModelItem(model) : first([driver.modelItem(model)]));
+    const item = await waitFor(findItem, { timeout: 5_000, what: `the model ${model}` }).catch(() => null);
     if (!item) {
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
       throw new Error(`${model} isn't in the model menu`);
@@ -116,7 +192,7 @@
     item.click();
     await sleep(300);
     // The menu can stay open with its search box focused; close it so typing goes to the composer.
-    if (visible(document.querySelector(driver.modelItem(model)))) {
+    if (driver.modelItem && visible(document.querySelector(driver.modelItem(model)))) {
       document.activeElement?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true }));
       await sleep(200);
     }
@@ -134,20 +210,34 @@
     return false;
   }
 
-  async function ask(prompt, progress, model) {
+  /**
+   * Background tabs don't render, and some sites only act (send, or update a streaming reply) when
+   * the page renders a frame. `nudge` asks the panel to show this tab for a moment.
+   */
+  async function ask(prompt, progress, model, nudge = async () => {}) {
     await waitFor(() => first(driver.composer), { timeout: 30_000, what: "the message box" });
+    await driver.prepare?.();
     await chooseModel(model);
     const composer = await waitFor(() => first(driver.composer), { timeout: 10_000, what: "the message box" });
     const before = all(driver.replies).length;
+    const sentBefore = driver.sentCount?.() ?? 0;
     await insert(composer, prompt);
     await sleep(200);
 
-    const send = await waitFor(() => {
-      const b = first(driver.send);
-      return b && !b.disabled && b.getAttribute("aria-disabled") !== "true" ? b : null;
-    }, { timeout: 10_000, what: "the send button" }).catch(() => null);
+    const send = driver.sendWithEnter
+      ? null
+      : await waitFor(() => {
+          const b = first(driver.send);
+          return b && !b.disabled && b.getAttribute("aria-disabled") !== "true" ? b : null;
+        }, { timeout: 10_000, what: "the send button" }).catch(() => null);
     if (send) send.click();
-    else composer.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, bubbles: true }));
+    else composer.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+    if (driver.sentCount) {
+      for (let tries = 0; tries < 3 && driver.sentCount() <= sentBefore; tries++) {
+        await sleep(1500);
+        if (driver.sentCount() <= sentBefore) await nudge();
+      }
+    }
 
     // Wait for the new reply to appear, then for it to stop changing.
     const reply = await waitFor(() => {
@@ -160,6 +250,8 @@
     let last = "";
     let stableSince = Date.now();
     let beat = Date.now();
+    let nudged = 0;
+    let lastNudge = Date.now();
     const deadline = Date.now() + 8 * 60_000;
     for (;;) {
       await sleep(600);
@@ -176,6 +268,12 @@
         beat = Date.now();
       }
       const stable = Date.now() - stableSince;
+      // Still "writing" but nothing new for a while: the page may be waiting to render.
+      if (generating(current) && stable > 25_000 && Date.now() - lastNudge > 25_000 && nudged < 4) {
+        nudged++;
+        lastNudge = Date.now();
+        await nudge();
+      }
       // Normally: done when the site says so. Some sites keep a Stop button up long after the
       // text is final (Cursor while its cloud environment starts), so also accept 45s of silence.
       if (text && ((!generating(current) && stable > 2500) || stable > 45_000)) return checked(text);
@@ -273,7 +371,19 @@
       if (busy) return port.postMessage({ type: "error", error: "this tab is already answering another prompt" });
       busy = true;
       try {
-        const text = await ask(msg.prompt, (chars) => port.postMessage({ type: "progress", chars }), msg.model);
+        // The panel shows the tab for a moment and answers "shown".
+        const nudge = () =>
+          new Promise((resolve) => {
+            const onShown = (m) => {
+              if (m?.type !== "shown") return;
+              port.onMessage.removeListener(onShown);
+              resolve();
+            };
+            port.onMessage.addListener(onShown);
+            port.postMessage({ type: "nudge" });
+            setTimeout(resolve, 5_000);
+          });
+        const text = await ask(msg.prompt, (chars) => port.postMessage({ type: "progress", chars }), msg.model, nudge);
         port.postMessage({ type: "done", text });
       } catch (e) {
         port.postMessage({ type: "error", error: e.message, status: status() });

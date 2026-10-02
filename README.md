@@ -187,9 +187,9 @@ lists the models your Cursor plan offers).
 
 ## The Chrome extension (beta)
 
-Prefer the chat websites to CLIs? The extension runs battles in your own browser tabs: it opens ChatGPT and
-Claude in temporary/incognito chats and Grok through [cursor.com/agents](https://cursor.com/agents), types each
-prompt, waits for the reply and reads it back, all from a side panel with the same verdict, history and
+Prefer the chat websites to CLIs? The extension runs battles in your own browser tabs: it opens ChatGPT, Claude
+and Gemini in temporary/incognito chats and Grok through [cursor.com/agents](https://cursor.com/agents), types each
+prompt, waits for the reply and reads it back (shared ChatGPT links in a question are read for everyone), all from a side panel with the same verdict, history and
 follow-ups. A **copy & paste** mode does the same with you carrying the messages, for when a site changes.
 
 It isn't in the Chrome Web Store yet. To try it:
@@ -199,6 +199,10 @@ It isn't in the Chrome Web Store yet. To try it:
 2. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and pick the unzipped
    `battler-extension` folder.
 3. Sign in to chatgpt.com, claude.ai and cursor.com, then click the battler icon.
+
+> battler's tabs sit in a collapsed "battler" tab group. Chrome doesn't render background tabs, and some sites
+> (Gemini's send button, for one) only act when they render, so battler may show such a tab for half a second
+> and switch straight back.
 
 > Automating a chat website is a grey area in most providers' terms of service. The extension only acts when
 > you start a battle, in visible tabs, one message at a time; copy & paste mode avoids automation entirely.

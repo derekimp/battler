@@ -11,6 +11,7 @@ New:
 - **Shared ChatGPT links** in a question are read by battler and given to every AI, since the AIs can't browse.
 - Debaters answer in the language of the question.
 - `--doctor` puts install commands on their own line, ready to copy.
+- **Chrome extension:** Gemini (3.1 Pro, in a temporary chat); shared ChatGPT links are read; a rounds picker; tabs in a collapsed group; a leftover draft in a site's message box is cleared first (Cursor kept one, which went out glued to the next prompt); a tab Chrome left unrendered is shown for a moment so the site can act; a paused tab fails with a clear message instead of hanging.
 - **Linux** is supported and tested in CI. `npx battler "…"` runs it without installing.
 
 Hardening against failures:
