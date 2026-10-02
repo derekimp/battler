@@ -159,6 +159,7 @@
 
     let last = "";
     let stableSince = Date.now();
+    let beat = Date.now();
     const deadline = Date.now() + 8 * 60_000;
     for (;;) {
       await sleep(600);
@@ -168,6 +169,11 @@
         last = text;
         stableSince = Date.now();
         progress(text.length);
+        beat = Date.now();
+      } else if (Date.now() - beat > 10_000) {
+        // A heartbeat, so the panel can tell a slow reply from a tab Chrome has paused.
+        progress(text.length);
+        beat = Date.now();
       }
       const stable = Date.now() - stableSince;
       // Normally: done when the site says so. Some sites keep a Stop button up long after the

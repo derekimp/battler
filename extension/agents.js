@@ -22,6 +22,8 @@ async function ownedTab(site) {
     } catch {}
   }
   const tab = await chrome.tabs.create({ url: site.home, active: false });
+  // Memory Saver mustn't discard a tab mid-reply.
+  await chrome.tabs.update(tab.id, { autoDiscardable: false }).catch(() => {});
   await chrome.storage.session.set({ [key]: tab.id });
   try {
     const { group } = await chrome.storage.session.get("group");
@@ -130,11 +132,21 @@ export function tabAgent(site, { onProgress } = {}) {
             port.disconnect();
             reject(new Error(`${site.name} took longer than 9 minutes`));
           }, 9 * 60_000);
+          // The page reports in at least every 10s while it waits for the reply. If it goes quiet,
+          // Chrome has most likely paused the background tab; say so instead of waiting forever.
+          let heard = Date.now();
+          const watchdog = setInterval(() => {
+            if (Date.now() - heard < 150_000) return;
+            port.disconnect();
+            finish(reject, new Error(`${site.name}'s tab stopped responding. Chrome may have paused it in the background; open the "battler" tab group to wake it, then try again`));
+          }, 5_000);
           const finish = (fn, v) => {
             clearTimeout(timer);
+            clearInterval(watchdog);
             fn(v);
           };
           port.onMessage.addListener((m) => {
+            heard = Date.now();
             if (m.type === "progress") onProgress?.(site.id, m.chars);
             else if (m.type === "done") finish(resolve, m.text);
             else if (m.type === "error") finish(reject, new Error(`${site.name}: ${m.error}`));

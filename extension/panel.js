@@ -1,6 +1,7 @@
 // battler side panel: set up a battle, run it with the shared engine against your own tabs
 // (or copy & paste), and show progress, the verdict and history.
 import { runBattle } from "./lib/core/battle.js";
+import { attachmentFrom, fetchSharedChat, findShareLinks } from "./lib/core/links.js";
 import { finalPositions, savedAnswer, savedToResult, toIncomplete, toSaved } from "./lib/core/saved-core.js";
 import { namedVerdict } from "./lib/core/verdict.js";
 import { htmlColor, renderRoundsHtml, renderTurnHtml, renderVerdictHtml } from "./lib/ui/html-report.js";
@@ -314,6 +315,7 @@ async function runLive({ topic, siteIds, length, rounds, continueFrom, question,
       <button class="back" id="leave">← New battle</button>
       ${followUpOf ? `<p class="muted followup">↳ Follow-up to: ${esc(followUpOf)}</p>` : ""}
       <h1>${esc(topic)}</h1>
+      <div id="attached"></div>
       <div class="chips">${agents.map((a) => `<span class="chip" style="--c:${colorOf(a.name)}">${esc(a.name)}</span>`).join("")}
         <span class="muted">${LENGTHS.find((l) => l.value === length).title} · ${prefs.mode === "manual" ? "copy & paste" : "automatic"}</span></div>
       <div class="steps">${steps.join("")}</div>
@@ -340,6 +342,29 @@ async function runLive({ topic, siteIds, length, rounds, continueFrom, question,
     }
   });
 
+  // The AIs can't open links (temporary chats, no browsing asked for), so read shared ChatGPT
+  // chats here and give everyone the text. A follow-up keeps the earlier battle's.
+  const attachments = [...(continueFrom?.saved.attachments ?? [])];
+  const showAttached = () =>
+    ($("#attached").innerHTML = attachments
+      .map((a) => `<p class="muted followup">📎 They read your shared ChatGPT chat “${esc(a.title)}” · ${a.messages} messages</p>`)
+      .join(""));
+  showAttached();
+  for (const url of more ? [] : findShareLinks(question ?? topic).slice(0, 3)) {
+    $("#attached").insertAdjacentHTML("beforeend", `<p class="muted followup" id="reading">Reading your shared ChatGPT chat…</p>`);
+    try {
+      attachments.push(attachmentFrom(await fetchSharedChat(url)));
+      showAttached();
+    } catch (e) {
+      running = null;
+      $("#verdict-slot").innerHTML = `<section class="card error-card"><h2>Couldn't read the shared chat</h2><p class="muted">${esc(e.message)}. Paste the parts that matter into the question instead.</p></section>`;
+      $("#reading")?.remove();
+      $("#stop")?.remove();
+      return;
+    }
+    if (controller.signal.aborted) return;
+  }
+
   let names = new Map();
   const onEvent = (e) => {
     switch (e.type) {
@@ -349,7 +374,7 @@ async function runLive({ topic, siteIds, length, rounds, continueFrom, question,
       case "round-done":
         // Keep the rounds so far, so closing the panel or a failure doesn't lose them.
         saveBattle(
-          toIncomplete({ topic, length, rounds: e.history, labels: e.labels, followUpOf: followUpOf ?? undefined }, agents),
+          toIncomplete({ topic, length, rounds: e.history, labels: e.labels, followUpOf: followUpOf ?? undefined, attachments }, agents),
           battleId,
         ).catch(() => {});
         break;
@@ -441,6 +466,7 @@ async function runLive({ topic, siteIds, length, rounds, continueFrom, question,
       length,
       signal: controller.signal,
       onEvent,
+      ...(attachments.length ? { attachments } : {}),
       ...(continueFrom ? { labels: new Map(continueFrom.saved.labels) } : {}),
       ...(resume ? { resume } : {}),
       ...(continueFrom && !more
