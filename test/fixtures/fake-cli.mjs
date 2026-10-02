@@ -17,7 +17,7 @@ const stdin = () => (stdinText ??= process.stdin.isTTY ? "" : readFileSync(0, "u
 const delay = Number(process.env.FAKE_DELAY_MS ?? 0) * ({ claude: 1, codex: 1.6, "cursor-agent": 2.4 }[cli] ?? 1) * (0.7 + Math.random() * 0.6);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const LEAK_VARS = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "CURSOR_API_KEY"];
+const LEAK_VARS = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "CURSOR_API_KEY", "ANTIGRAVITY_API_KEY", "GEMINI_API_KEY"];
 
 function answer(prompt, who) {
   const leaked = LEAK_VARS.filter((v) => process.env[v]);
@@ -81,6 +81,11 @@ async function main() {
   if (cli === "codex" && args[0] === "login") return console.log("Logged in using ChatGPT");
   if (cli === "cursor-agent" && args[0] === "status") return console.log("✓ Logged in as test@example.com");
   if (cli === "gemini" && args[0] === "--version") return console.log("0.62.0");
+  if (cli === "agy" && args[0] === "--version") return console.log("1.2.15");
+  if (cli === "agy" && args[0] === "models") {
+    if (process.env.FAKE_AGY_SIGNED_OUT) return console.error("Please sign in to Antigravity first."), process.exit(1);
+    return console.log("Fetching available models...\ngemini-3.1-pro-high\tGemini 3.1 Pro (High)\ngemini-3.8-flash-high\tGemini 3.8 Flash (High)");
+  }
 
   await sleep(delay);
   if (listed("FAKE_FAIL")) return console.error(`${cli}: simulated failure`), process.exit(2);
@@ -93,7 +98,7 @@ async function main() {
     }
   }
   // FAKE_FAIL_JUDGE=1: every judging call fails (debate rounds still work).
-  const promptText = cli === "cursor-agent" ? args.at(-1) : cli === "gemini" ? args[args.indexOf("-p") + 1] : stdin();
+  const promptText = cli === "cursor-agent" ? args.at(-1) : cli === "gemini" || cli === "agy" ? args[args.indexOf("-p") + 1] : stdin();
   if (process.env.FAKE_FAIL_JUDGE && (promptText ?? "").includes("Consolidate this debate")) {
     return console.error(`${cli}: judge unavailable`), process.exit(3);
   }
@@ -121,6 +126,15 @@ async function main() {
     // Like the real one: a log line, then the JSON result.
     console.log("Loaded cached credentials.");
     return console.log(JSON.stringify({ response: answer(args[args.indexOf("-p") + 1], `gemini[${model}]`), stats: {} }, null, 2));
+  }
+  if (cli === "agy") {
+    const model = args[args.indexOf("--model") + 1];
+    // Like the real one in print mode: a denied tool leaves an empty response.
+    if (process.env.FAKE_AGY_TOOL) {
+      console.error('jetski: no output produced, a tool required the "command" permission that headless mode cannot prompt for.');
+      return console.log(JSON.stringify({ status: "SUCCESS", response: "", denied_actions: [{ action: "command", display_name: "RunCommand" }] }));
+    }
+    return console.log(JSON.stringify({ conversation_id: "x", status: "SUCCESS", response: answer(promptText, `agy[${model}]`) + "\n", num_turns: 1 }));
   }
   if (cli === "cursor-agent") {
     const model = args[args.indexOf("--model") + 1];

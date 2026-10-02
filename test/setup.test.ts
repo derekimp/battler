@@ -38,7 +38,7 @@ function machine(initial: Omit<State, "gemini"> & Partial<State>, answers: (stri
       const full = [cmd, ...args].join(" ");
       ran.push(full);
       const id = (["claude", "codex", "grok", "gemini"] as AgentId[]).find((i) =>
-        full.includes({ claude: "claude", codex: "codex", grok: "cursor", gemini: "gemini" }[i]),
+        ({ claude: /claude/, codex: /codex/, grok: /cursor/, gemini: /agy|antigravity|gemini/ })[i].test(full),
       )!;
       if (/install/.test(full) && !/login/.test(full)) {
         if (opts.failInstall) return 1;
@@ -101,10 +101,10 @@ test("existing config is kept and its values are the defaults", async () => {
   assert.deepEqual(JSON.parse(readFileSync(m.deps.configPath, "utf8")), { agents: ["claude", "grok"], length: "long", open: true });
 });
 
-test("Gemini can be installed and signed in from setup", async () => {
+test("Gemini can be installed and signed in from setup, through Antigravity CLI", async () => {
   const m = machine({ claude: "ready", codex: "ready", grok: "ready", gemini: "missing" }, [true, true, "medium", true, false]);
   assert.equal(await runSetup(m.deps), 0);
-  assert.deepEqual(m.ran, ["npm install -g @google/gemini-cli", "gemini"]);
-  assert.match(m.asked[1], /Log in to Gemini CLI with a Google account.*Choose "Login with Google", then type \/quit/);
+  assert.deepEqual(m.ran, ["sh -c curl -fsSL https://antigravity.google/cli/install.sh | bash", "agy"]);
+  assert.match(m.asked[1], /Log in to Antigravity CLI with a Google account.*Sign in with Google, then type \/quit/);
   assert.match(m.out(), /You're ready: Claude vs GPT vs Grok vs Gemini/);
 });

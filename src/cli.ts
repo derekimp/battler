@@ -128,7 +128,9 @@ async function main() {
       const model = cursorModelOf(a);
       const quota = model && cursorQuota(model);
       const detail = model ? err.dim(` · ${model}, Cursor's ${quota} allowance`) : "";
-      log(`  ${problem ? err.red("✗") : err.green("✓")} ${name} ${problem ? problem : err.dim("ready") + detail}`);
+      const install = problem?.match(/^(.*?);?\s*install it with: (.+)$/);
+      log(`  ${problem ? err.red("✗") : err.green("✓")} ${name} ${problem ? (install ? `${install[1]}. Install it with:` : problem) : err.dim("ready") + detail}`);
+      if (install) log(`              ${err.cyan(install[2])}`);
       if (!problem && quota === "Other Models") {
         log(err.yellow(`            This model uses Cursor's "Other Models" allowance. Cursor's own Grok (cursor-grok-*) uses the separate "Cursor Models" one.`));
       }

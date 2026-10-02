@@ -21,6 +21,7 @@ function battler(args: string[], env: Record<string, string> = {}, input?: strin
       HOME: dir,
       XDG_CONFIG_HOME: join(dir, "config"),
       NO_COLOR: "1",
+      BATTLER_AGY: process.env.BATTLER_AGY!,
       ...env,
     },
   });
@@ -237,7 +238,7 @@ test("doctor and battles say which Cursor allowance Grok uses", () => {
 test("with Gemini installed and signed in, it joins the battle and the panel", () => {
   const home = mkdtempSync(join(tmpdir(), "gemini-home-"));
   writeFileSync(join(home, "oauth_creds.json"), "{}");
-  const r = battler(["--json", "Q?"], { PATH: `${FAKE_BIN}-gemini:${FAKE_BIN}:${process.env.PATH}`, BATTLER_GEMINI_HOME: home });
+  const r = battler(["--json", "Q?"], { PATH: `${FAKE_BIN}-gemini:${FAKE_BIN}:${process.env.PATH}`, BATTLER_GEMINI_HOME: home, GOOGLE_CLOUD_PROJECT: "my-project" });
   assert.equal(r.status, 0, r.stderr);
   const v = JSON.parse(r.stdout).verdict;
   assert.deepEqual(v.scorecard.map((s: { debater: string }) => s.debater).sort(), ["Claude", "GPT", "Gemini", "Grok"]);
@@ -301,7 +302,7 @@ test("hand-picked debaters and judges are checked before the battle", () => {
   const log = join(dir, "calls.jsonl");
   const r = battler(["-s", "-a", "claude,gemini", "Q?"], { FAKE_LOG: log });
   assert.equal(r.status, 1);
-  assert.match(r.stderr, /not ready:\n  Gemini: `gemini` not found on PATH/);
+  assert.match(r.stderr, /not ready:\n  Gemini: Antigravity CLI \(`agy`\) not found on PATH/);
   assert.equal(askCalls(log).length, 0);
   const judge = battler(["-s", "-a", "claude,codex", "-j", "gemini", "Q?"], { FAKE_LOG: log });
   assert.match(judge.stderr, /not ready:\n  Gemini:/);
@@ -328,7 +329,7 @@ test("stopping battler (SIGTERM) also stops the AI CLIs it started", async () =>
   const { spawn } = await import("node:child_process");
   const dir = mkdtempSync(join(tmpdir(), "sig-"));
   const child = spawn(process.execPath, [ENTRY, "-s", "-o", join(dir, "b"), `Topic ${marker}?`], {
-    env: { PATH: `${FAKE_BIN}:${process.env.PATH}`, HOME: dir, XDG_CONFIG_HOME: join(dir, "c"), FAKE_DELAY_MS: "20000", NO_COLOR: "1" },
+    env: { PATH: `${FAKE_BIN}:${process.env.PATH}`, HOME: dir, XDG_CONFIG_HOME: join(dir, "c"), FAKE_DELAY_MS: "20000", NO_COLOR: "1", BATTLER_AGY: process.env.BATTLER_AGY! },
     stdio: "ignore",
   });
   const running = () => spawnSync("pgrep", ["-f", marker]).stdout.toString().trim().split("\n").filter(Boolean).length;

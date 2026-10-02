@@ -5,6 +5,10 @@ import type { Agent, AskOptions } from "../src/core/types.ts";
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 export const FAKE_BIN = join(ROOT, "test", "fixtures", "bin");
 
+// Antigravity CLI installs next to Node (~/.local/bin), so PATH alone can't keep tests away from a
+// real one; point battler at a name that doesn't exist unless a test brings the fake.
+process.env.BATTLER_AGY ??= "agy-not-installed-in-tests";
+
 /** In-process debater for engine tests: records prompts and answers via `reply`. */
 export function fakeAgent(
   id: string,

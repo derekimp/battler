@@ -7,6 +7,10 @@ New:
 - **Compare mode** (`-c` / **Just compare**): each AI answers once, side by side, with no debate or judging. One message per AI. `battler continue` (or **Have them debate it**) turns a comparison into a full battle.
 - **Sharing:** the web app makes an image of a result to copy or download; `battler share` (or **Create a link**) uploads the report as a secret GitHub Gist with your own `gh` login.
 - **A clean slate:** debaters and judges are told to ignore anything they know about you (Claude Code adds your account email, Cursor your user rules), so answers aren't tailored to you or your past chats.
+- **Gemini runs through Antigravity CLI** (`agy`, Gemini 3.1 Pro by default). Google stopped serving Gemini CLI to personal Google accounts on 18 June 2026; battler now says so instead of counting Gemini as ready. Gemini CLI still works with a Gemini Code Assist licence.
+- **Shared ChatGPT links** in a question are read by battler and given to every AI, since the AIs can't browse.
+- Debaters answer in the language of the question.
+- `--doctor` puts install commands on their own line, ready to copy.
 - **Linux** is supported and tested in CI. `npx battler "…"` runs it without installing.
 
 Hardening against failures:

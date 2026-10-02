@@ -114,7 +114,7 @@ test("the CLI compares with -c, then `continue` debates it into a full battle", 
     spawnSync(process.execPath, [resolve(ROOT, process.env.BATTLER_ENTRY ?? "src/cli.ts"), ...args], {
       cwd: dir,
       encoding: "utf8",
-      env: { PATH: `${FAKE_BIN}:${process.env.PATH}`, HOME: dir, XDG_CONFIG_HOME: join(dir, "config"), NO_COLOR: "1" },
+      env: { PATH: `${FAKE_BIN}:${process.env.PATH}`, HOME: dir, XDG_CONFIG_HOME: join(dir, "config"), NO_COLOR: "1", BATTLER_AGY: process.env.BATTLER_AGY! },
     });
   const r = run(["-c", "--json", "Tabs or spaces?"]);
   assert.equal(r.status, 0, r.stderr);
@@ -218,7 +218,7 @@ function cli(args: string[], dir: string, extraPath = "") {
   return spawnSync(process.execPath, [resolve(ROOT, process.env.BATTLER_ENTRY ?? "src/cli.ts"), ...args], {
     cwd: dir,
     encoding: "utf8",
-    env: { PATH: `${extraPath}${FAKE_BIN}:${process.env.PATH}`, HOME: dir, XDG_CONFIG_HOME: join(dir, "config"), NO_COLOR: "1" },
+    env: { PATH: `${extraPath}${FAKE_BIN}:${process.env.PATH}`, HOME: dir, XDG_CONFIG_HOME: join(dir, "config"), NO_COLOR: "1", BATTLER_AGY: process.env.BATTLER_AGY! },
   });
 }
 
@@ -274,7 +274,7 @@ test("if debating a comparison fails, the comparison is kept as it was", () => {
   const failed = spawnSync(process.execPath, [resolve(ROOT, process.env.BATTLER_ENTRY ?? "src/cli.ts"), "continue"], {
     cwd: dir,
     encoding: "utf8",
-    env: { PATH: `${FAKE_BIN}:${process.env.PATH}`, HOME: dir, XDG_CONFIG_HOME: join(dir, "config"), NO_COLOR: "1", FAKE_FAIL_JUDGE: "1" },
+    env: { PATH: `${FAKE_BIN}:${process.env.PATH}`, HOME: dir, XDG_CONFIG_HOME: join(dir, "config"), NO_COLOR: "1", FAKE_FAIL_JUDGE: "1", BATTLER_AGY: process.env.BATTLER_AGY! },
   });
   assert.equal(failed.status, 1);
   assert.doesNotMatch(failed.stderr, /battler continue` will have them judged/);

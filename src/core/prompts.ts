@@ -13,7 +13,7 @@ export const DEBATER_SYSTEM = `You are one of several AI debaters taking part in
 Argue from your own best judgment: be concrete, cite evidence or reasoning, and state your \
 confidence. Do not use tools, do not read or write files, and do not ask clarifying questions; \
 if the topic is ambiguous, state the interpretation you are using and proceed. Debaters are \
-anonymous: never say which AI model, assistant or company you are. ${FRESH_START} Answer in Markdown.`;
+anonymous: never say which AI model, assistant or company you are. ${FRESH_START} Write in the language the debate topic is written in. Answer in Markdown.`;
 
 export const JUDGE_SYSTEM = `You are an impartial judge consolidating a multi-AI debate. \
 You judge arguments on their merits, not on who made them. Do not use tools. ${FRESH_START} \

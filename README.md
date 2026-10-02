@@ -61,7 +61,7 @@ battler "Is it still worth learning to code in 2026?"
 | Claude | Claude Code (`claude`) | [claude.com/claude-code](https://claude.com/claude-code) | Claude Pro or Max: run `claude` and log in |
 | GPT | Codex CLI (`codex`) | `npm install -g @openai/codex` | ChatGPT: `codex login` |
 | Grok | Cursor CLI (`cursor-agent`) | `curl https://cursor.com/install -fsS \| bash` | Cursor: `cursor-agent login` |
-| Gemini *(optional)* | Gemini CLI (`gemini`) | `npm install -g @google/gemini-cli` | Google account: run `gemini`, choose Login with Google |
+| Gemini *(optional)* | Antigravity CLI (`agy`) | `curl -fsSL https://antigravity.google/cli/install.sh \| bash` | Google account: run `agy` once and sign in |
 
 `battler setup` does all of this with you, asking before each install or sign-in. `battler --doctor` shows
 what's ready at any time.
@@ -233,13 +233,13 @@ It isn't in the Chrome Web Store yet. To try it:
 ## Subscriptions, usage and privacy
 
 - **Subscriptions only.** `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `CURSOR_API_KEY`, `GEMINI_API_KEY` and similar
-  variables are removed before each CLI starts, so an exported key is never billed. A Gemini CLI signed in with
-  an API key instead of a Google account is refused.
+  variables are removed before each CLI starts, so an exported key is never billed. Gemini runs through
+  Antigravity CLI signed in with your Google account; a Gemini CLI signed in with an API key is refused.
 - **Usage.** A medium battle with three debaters makes 9 calls (3 opening + 3 rebuttals + 3 judges); a short
   one makes 7. Each extra round adds one call per debater. They count against your plans' normal limits, the
   same as typing the prompts yourself.
 - **Sandboxed.** The CLIs are coding agents, so battler runs them with no tools (Claude), read-only (Codex,
-  Gemini) or in ask mode (Cursor), in an empty temporary folder. They never see your files.
+  Gemini CLI; Antigravity CLI's headless mode refuses every tool) or in ask mode (Cursor), in an empty temporary folder. They never see your files.
 - **A clean slate every time.** Each AI is told to ignore what it knows about you (Claude Code passes it
   your account email, Cursor your user rules) and answer as it would for anyone. The extension uses
   ChatGPT's temporary chats and Claude's incognito mode, which leave memory out.
