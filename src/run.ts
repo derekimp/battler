@@ -69,7 +69,14 @@ export async function runPlan(
     if (e.type === "round-done" && saveRounds) {
       try {
         const partial = toIncomplete(
-          { topic: plan.topic, length: plan.length, rounds: e.history, labels: e.labels, followUpOf: plan.followUp?.topic ?? plan.followUpOf },
+          {
+            topic: plan.topic,
+            length: plan.length,
+            rounds: e.history,
+            labels: e.labels,
+            followUpOf: plan.followUp?.topic ?? plan.followUpOf,
+            attachments: plan.attachments,
+          },
           plan.agents,
           now,
         );
@@ -93,6 +100,7 @@ export async function runPlan(
       labels: plan.labels,
       resume: plan.resume,
       followUp: plan.followUp,
+      attachments: plan.attachments,
       signal: opts.signal,
       onEvent,
       retryDelayMs: opts.retryDelayMs,

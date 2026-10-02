@@ -402,11 +402,17 @@ const fmtSecs = (ms) => {
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
 };
 
-function headHtml({ topic, followUpOf, debaters, meta, back = true }) {
+function headHtml({ topic, followUpOf, debaters, meta, attachments = [], back = true }) {
   return `<header class="battle-head">
     ${back ? '<a class="back" href="#/">← New battle</a>' : ""}
     ${followUpOf ? `<p class="muted followup">↳ Follow-up to: ${esc(followUpOf)}</p>` : ""}
     <h1>${esc(topic)}</h1>
+    ${attachments
+      .map(
+        (a) =>
+          `<p class="attached">📎 They read your shared ChatGPT chat <a href="${esc(a.url)}" target="_blank" rel="noopener">“${esc(a.title)}”</a> <span class="muted">· ${a.messages} messages</span></p>`,
+      )
+      .join("")}
     <div class="meta">${debaters.map((x) => `<span class="chip" style="--c:${x.color}">${esc(x.name)}</span>`).join("")}<span class="muted">${esc(meta)}</span></div>
   </header>`;
 }
@@ -445,7 +451,7 @@ function renderLive(jobId) {
         for (let r = e.firstRound; r <= e.totalRounds; r++) steps.push([`r${r}`, e.compare ? "Answers" : r === 1 ? "Opening" : `Round ${r}`]);
         if (!e.compare) steps.push(["verdict", "Verdict"]);
         view.innerHTML = `
-          ${headHtml({ topic: e.topic, followUpOf: e.followUpOf, debaters: e.debaters, meta: e.compare ? `${lengthName} · side by side, no judging` : `${lengthName} · ${e.totalRounds} round${e.totalRounds > 1 ? "s" : ""} · ${judged}` })}
+          ${headHtml({ topic: e.topic, followUpOf: e.followUpOf, debaters: e.debaters, attachments: e.attachments, meta: e.compare ? `${lengthName} · side by side, no judging` : `${lengthName} · ${e.totalRounds} round${e.totalRounds > 1 ? "s" : ""} · ${judged}` })}
           ${e.notes.length ? `<div class="notes">${e.notes.map((n) => `<p class="${/allowance|Skipping|isn't ready/.test(n) ? "warn" : ""}">${esc(n)}</p>`).join("")}</div>` : ""}
           <ol class="timeline" aria-label="Progress">${steps.map(([k, label], i) => `<li data-step="${k}"><span class="num">${i + 1}</span>${label}</li>`).join("")}</ol>
           <div id="verdict-slot"></div>
@@ -614,7 +620,7 @@ async function renderSaved(id) {
     ? `${lengthName} · side by side, no judging · ${timeAgo(b.createdAt)}`
     : `${lengthName} · ${b.rounds} round${b.rounds > 1 ? "s" : ""}${b.incomplete ? "" : ` · ${judged}`} · ${timeAgo(b.createdAt)}`;
   view.innerHTML = `
-    ${headHtml({ topic: b.topic, followUpOf: b.followUpOf, debaters: b.debaters, meta })}
+    ${headHtml({ topic: b.topic, followUpOf: b.followUpOf, debaters: b.debaters, attachments: b.attachments, meta })}
     ${verdictPart}
     ${b.compare ? "" : `<section class="transcript"><h2>Transcript</h2>${b.roundsHtml}</section>`}`;
   $("#finish")?.addEventListener("click", () => finishBattle(b.id));

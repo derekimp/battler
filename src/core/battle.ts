@@ -2,6 +2,7 @@ import type { Agent, BattleEvent, BattleResult, Turn } from "./types.ts";
 import { DEBATER_SYSTEM, JUDGE_SYSTEM, debatePrompt, followUpBackground, judgePrompt, openingPrompt, type Position } from "./prompts.ts";
 import { mergePanel, type JudgeVerdict } from "./panel.ts";
 import { isTransient, looksOffline, message } from "./errors.ts";
+import { attachmentsBlock, type Attachment } from "./links.ts";
 import { parseVerdict, sanitizeVerdict, type Length } from "./verdict.ts";
 
 export interface BattleOptions {
@@ -31,6 +32,8 @@ export interface BattleOptions {
   followUp?: FollowUp;
   /** Wait before retrying a call that failed with a hiccup (network, 5xx). Tests pass 0. */
   retryDelayMs?: number;
+  /** Shared conversations the question refers to, already fetched; every prompt includes them. */
+  attachments?: Attachment[];
 }
 
 export interface FollowUp {
@@ -67,6 +70,9 @@ const sleep = (ms: number, signal?: AbortSignal) =>
 
 export async function runBattle(opts: BattleOptions): Promise<BattleResult> {
   const { topic, length, onEvent = () => {}, signal, shuffle = randomShuffle, followUp, retryDelayMs = 3000 } = opts;
+  // What the AIs see as the topic: the question, plus any shared conversation it links to.
+  const material = attachmentsBlock(opts.attachments);
+  const asked = material ? `${topic}\n\n${material}` : topic;
 
   /** Ask, and if it fails with a hiccup (not a used-up plan or a missing CLI), ask once more. */
   const ask = async (agent: Agent, prompt: string, system: string, round: number | "verdict") => {
@@ -100,14 +106,14 @@ export async function runBattle(opts: BattleOptions): Promise<BattleResult> {
       active.map(async (agent): Promise<Turn> => {
         let prompt: string;
         if (round === 1) {
-          prompt = openingPrompt(topic, length, followUp && followUpBackground(followUp, agent.id, labels));
+          prompt = openingPrompt(asked, length, followUp && followUpBackground(followUp, agent.id, labels));
         } else {
           const own = prev!.find((t) => t.agentId === agent.id)!.text;
           const others = prev!
             .filter((t) => t.agentId !== agent.id)
             .map((t) => ({ label: labels.get(t.agentId)!, text: t.text }))
             .sort((a, b) => a.label.localeCompare(b.label));
-          prompt = debatePrompt(topic, round, own, others, length);
+          prompt = debatePrompt(asked, round, own, others, length);
         }
         const start = Date.now();
         const text = await ask(agent, prompt, DEBATER_SYSTEM, round);
@@ -158,6 +164,7 @@ export async function runBattle(opts: BattleOptions): Promise<BattleResult> {
       dropped,
       compare: true,
       ...(followUp ? { followUpOf: followUp.topic } : {}),
+      ...(opts.attachments?.length ? { attachments: opts.attachments } : {}),
     };
   }
 
@@ -167,7 +174,7 @@ export async function runBattle(opts: BattleOptions): Promise<BattleResult> {
       .map((t): Position => ({ label: labels.get(t.agentId)!, text: t.text }))
       .sort((a, b) => a.label.localeCompare(b.label)),
   }));
-  const prompt = judgePrompt(topic, positions, length, followUp);
+  const prompt = judgePrompt(asked, positions, length, followUp);
 
   // A judge whose own debate turns failed probably can't judge either (unless that leaves nobody).
   const healthy = opts.judges.filter((j) => !dropped.some((d) => d.agentName === j.name));
@@ -226,5 +233,6 @@ export async function runBattle(opts: BattleOptions): Promise<BattleResult> {
     dropped,
     ...(followUp ? { followUpOf: followUp.topic } : {}),
     ...(opts.resume?.length ? { resumedFrom: opts.resume.length } : {}),
+    ...(opts.attachments?.length ? { attachments: opts.attachments } : {}),
   };
 }

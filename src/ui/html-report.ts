@@ -69,6 +69,9 @@ export function renderHtmlReport(result: BattleResult, date = new Date()): strin
   <div class="brand">battler</div>
   ${result.followUpOf ? `<p class="muted followup">Follow-up to: ${escapeHtml(result.followUpOf)}</p>` : ""}
   <h1>${escapeHtml(result.topic)}</h1>
+  ${(result.attachments ?? [])
+    .map((a) => `<p class="muted followup">📎 Shared ChatGPT chat: <a href="${escapeHtml(a.url)}">${escapeHtml(a.title)}</a> (${a.messages} messages)</p>`)
+    .join("")}
   <div class="meta">${chips}<span class="muted">${meta}</span></div>
   ${dropped}
 </header>

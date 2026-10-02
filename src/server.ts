@@ -108,6 +108,7 @@ function detail(id: string, saved: SavedBattle) {
     roundsHtml: renderRoundsHtml(result),
     reportUrl: `/reports/${encodeURIComponent(id)}.html`,
     card: saved.incomplete ? null : shareCard(result),
+    attachments: (saved.attachments ?? []).map((a) => ({ url: a.url, title: a.title, messages: a.messages })),
   };
 }
 
@@ -188,8 +189,10 @@ export function startServer(opts: ServeOptions): Server & { stopAll(): void } {
       debaters: plan.agents.map((a) => ({ name: a.name, color: htmlColor(a.name) })),
       judges: plan.judges.map((j) => j.name),
       compare: Boolean(plan.compare),
+      attachments: (plan.attachments ?? []).map((a) => ({ url: a.url, title: a.title, messages: a.messages })),
       // File paths mean nothing in the browser: the follow-up line already says what this continues.
       notes: plan.notes.flatMap((n) => {
+        if (n.startsWith("Read the shared ChatGPT chat")) return []; // shown with the topic
         if (!n.startsWith("Continuing ")) return [n];
         const so = n.match(/(\d+) rounds? so far/);
         return so ? [`Picking up after ${so[1]} round${so[1] === "1" ? "" : "s"}; everyone rebuts the latest positions.`] : [];

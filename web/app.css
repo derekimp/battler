@@ -219,6 +219,8 @@ code.cmd { display: inline-block; background: var(--soft); border-radius: 6px; p
 .share-dialog img { width: 100%; border-radius: 12px; border: 1px solid var(--line); display: block; }
 .share-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
 .share-note { font-size: 13px; margin: 10px 0 0; overflow-wrap: anywhere; }
+.attached { margin: -4px 0 12px; font-size: 14px; overflow-wrap: anywhere; }
+.attached a { color: inherit; }
 .only-mobile { display: none; }
 @media (max-width: 860px) {
   .only-mobile { display: inline-grid; }

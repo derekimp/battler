@@ -4,6 +4,7 @@
  */
 import type { Agent, BattleResult, Turn } from "./types.ts";
 import type { Length, Verdict } from "./verdict.ts";
+import type { Attachment } from "./links.ts";
 
 export interface SavedBattle {
   version: 1;
@@ -23,11 +24,13 @@ export interface SavedBattle {
   incomplete?: boolean;
   /** Compare mode: the answers side by side, never debated or judged. */
   compare?: boolean;
+  /** Shared conversations the question linked to, as the AIs saw them (so continuing keeps them). */
+  attachments?: Attachment[];
 }
 
 /** A battle that stopped before its verdict, from its rounds so far. */
 export function toIncomplete(
-  p: { topic: string; length: Length; rounds: Turn[][]; labels: Map<string, string>; followUpOf?: string },
+  p: { topic: string; length: Length; rounds: Turn[][]; labels: Map<string, string>; followUpOf?: string; attachments?: Attachment[] },
   agents: Agent[],
   createdAt = new Date(),
 ): SavedBattle {
@@ -43,6 +46,7 @@ export function toIncomplete(
     verdictText: "",
     judges: [],
     ...(p.followUpOf ? { followUpOf: p.followUpOf } : {}),
+    ...(p.attachments?.length ? { attachments: p.attachments } : {}),
     incomplete: true,
   };
 }
@@ -61,6 +65,7 @@ export function toSaved(result: BattleResult, agents: Agent[], createdAt = new D
     judges: result.judges,
     ...(result.followUpOf ? { followUpOf: result.followUpOf } : {}),
     ...(result.compare ? { compare: true } : {}),
+    ...(result.attachments?.length ? { attachments: result.attachments } : {}),
   };
 }
 
@@ -94,6 +99,7 @@ export function savedToResult(saved: SavedBattle): BattleResult {
     dropped: [],
     ...(saved.followUpOf ? { followUpOf: saved.followUpOf } : {}),
     ...(saved.compare ? { compare: true } : {}),
+    ...(saved.attachments?.length ? { attachments: saved.attachments } : {}),
   };
 }
 

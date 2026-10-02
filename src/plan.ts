@@ -9,6 +9,7 @@ import type { FollowUp } from "./core/battle.ts";
 import { finalPositions, savedAnswer, type SavedBattle } from "./core/saved.ts";
 import type { Agent, Turn } from "./core/types.ts";
 import { LENGTHS, type Length } from "./core/verdict.ts";
+import { attachmentFrom, fetchSharedChat, findShareLinks, type Attachment, type SharedChat } from "./core/links.ts";
 import { truncate } from "./ui/term.ts";
 import { autoLineup, defaultJudge, explicitLineup, quotaNote } from "./lineup.ts";
 
@@ -38,6 +39,34 @@ export interface Plan {
   compare?: boolean;
   /** Debating a saved comparison: it's only replaced once the debate has a verdict. */
   fromCompare?: boolean;
+  /** Shared conversations linked in the question, fetched by battler since the AIs can't browse. */
+  attachments?: Attachment[];
+}
+
+type ChatFetcher = (url: string) => Promise<SharedChat>;
+
+/**
+ * Read the shared ChatGPT conversations a question links to. The AIs run without tools, so they
+ * couldn't open the links themselves; a link that can't be read stops the battle before anyone's
+ * plan is spent on answers that just say "I can't open that".
+ */
+async function readLinks(text: string, fetchChat: ChatFetcher = fetchSharedChat): Promise<{ attachments: Attachment[]; notes: string[] }> {
+  const urls = findShareLinks(text).slice(0, 3);
+  const attachments: Attachment[] = [];
+  const notes: string[] = [];
+  for (const url of urls) {
+    let chat: SharedChat;
+    try {
+      chat = await fetchChat(url);
+    } catch (e) {
+      throw new PlanError(`couldn't read the shared ChatGPT chat ${url}: ${(e as Error).message}. Paste the parts that matter into the question instead.`);
+    }
+    const a = attachmentFrom(chat);
+    attachments.push(a);
+    const shortened = a.text.length < chat.messages.reduce((s, m) => s + m.text.length, 0) ? "; it's long, so the start and the latest messages are included" : "";
+    notes.push(`Read the shared ChatGPT chat "${a.title}" (${a.messages} messages${shortened}). Everyone sees it.`);
+  }
+  return { attachments, notes };
 }
 
 export const displayPath = (f: string) => (relative(process.cwd(), f).startsWith("..") ? f : relative(process.cwd(), f));
@@ -87,6 +116,8 @@ export async function newPlan(req: {
   compare?: boolean;
   config: Config;
   check?: Checker;
+  /** For tests: reads a shared ChatGPT link. */
+  fetchChat?: ChatFetcher;
 }): Promise<Plan> {
   const topic = req.topic.trim();
   if (!topic) throw new PlanError("no topic given");
@@ -120,7 +151,17 @@ export async function newPlan(req: {
     if (found.size) throw new PlanError(`not ready:\n  ${[...found.values()].join("\n  ")}\n\n  Run \`battler --doctor\` for details.`);
   }
   const note = quotaNote(agents);
-  return { topic, agents, judges, rounds, length, notes: note ? [...notes, note] : notes, ...(req.compare ? { compare: true } : {}) };
+  const links = await readLinks(topic, req.fetchChat);
+  return {
+    topic,
+    agents,
+    judges,
+    rounds,
+    length,
+    notes: [...links.notes, ...notes, ...(note ? [note] : [])],
+    ...(req.compare ? { compare: true } : {}),
+    ...(links.attachments.length ? { attachments: links.attachments } : {}),
+  };
 }
 
 /**
@@ -140,6 +181,7 @@ export async function continuePlan(
     /** Follow-ups: compare instead of debate. Defaults to what the earlier battle did. */
     compare?: boolean;
     check?: Checker;
+    fetchChat?: ChatFetcher;
   },
 ): Promise<Plan> {
   const all = saved.agents.map((a) => {
@@ -169,7 +211,11 @@ export async function continuePlan(
         ? "(That debate stopped before the judges gave a verdict.)"
         : savedAnswer(saved);
     const compare = opts.compare ?? Boolean(saved.compare);
+    // The earlier battle's shared chats stay in view; a link in the new question is read too.
+    const links = await readLinks(question, opts.fetchChat);
+    const attachments = [...(saved.attachments ?? []), ...links.attachments];
     return {
+      ...(attachments.length ? { attachments } : {}),
       topic: question.trim(),
       agents,
       judges: compare ? [] : judges,
@@ -177,7 +223,7 @@ export async function continuePlan(
       labels,
       rounds: compare ? 1 : checkRounds(opts.rounds ?? opts.config.rounds ?? 2),
       followUp: { topic: saved.topic, answer, finals: finalPositions(saved) },
-      notes: notes(source),
+      notes: [...links.notes, ...notes(source)],
       ...(compare ? { compare: true } : {}),
     };
   }
@@ -189,6 +235,7 @@ export async function continuePlan(
     }
     return {
       fromCompare: true,
+      ...(saved.attachments?.length ? { attachments: saved.attachments } : {}),
       topic: saved.topic,
       agents,
       judges,
@@ -213,6 +260,7 @@ export async function continuePlan(
     rounds,
     resume: saved.rounds,
     followUpOf: saved.followUpOf,
+    ...(saved.attachments?.length ? { attachments: saved.attachments } : {}),
     ...(saved.incomplete ? { replaces: basename(from).replace(/\.(json|html|md)$/, "") } : {}),
     notes: notes(`${source} · ${so}${saved.incomplete && rounds === 0 ? " · judging it now" : ""}`),
   };
