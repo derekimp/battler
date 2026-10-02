@@ -250,3 +250,33 @@ test("a follow-up to a comparison is compared too, unless it's debated", () => {
   assert.equal(follow.status, 0, follow.stderr);
   assert.equal(JSON.parse(follow.stdout).compare, true);
 });
+
+test("a gh that quits before reading a long report is an error, not a crash", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "gh-quit-"));
+  const bin = join(dir, "gh");
+  writeFileSync(bin, "#!/bin/sh\necho 'To get started with GitHub CLI, please run:  gh auth login' >&2\nexit 4\n");
+  chmodSync(bin, 0o755);
+  await assert.rejects(createGist("x".repeat(500_000), "a.md", "d", bin), /gh auth login/);
+});
+
+test("a comparison only one AI answered can't be debated, and says why", async () => {
+  const one = { ...savedCompare, rounds: [[savedCompare.rounds[0][0]]] };
+  await assert.rejects(continuePlan(one, "/x/t.json", "", { config: {}, check: async () => null }), /only one AI answered/);
+  const follow = await continuePlan(one, "/x/t.json", "Next?", { config: {}, check: async () => null });
+  assert.equal(follow.agents.length, 2, "a follow-up asks everyone again");
+});
+
+test("if debating a comparison fails, the comparison is kept as it was", () => {
+  const dir = mkdtempSync(join(tmpdir(), "battler-cmpfail-"));
+  assert.equal(cli(["-c", "Tabs or spaces?"], dir).status, 0);
+  const file = join(dir, "battles", readdirSync(join(dir, "battles")).find((f) => f.endsWith(".json"))!);
+  const before = readFileSync(file, "utf8");
+  const failed = spawnSync(process.execPath, [resolve(ROOT, process.env.BATTLER_ENTRY ?? "src/cli.ts"), "continue"], {
+    cwd: dir,
+    encoding: "utf8",
+    env: { PATH: `${FAKE_BIN}:${process.env.PATH}`, HOME: dir, XDG_CONFIG_HOME: join(dir, "config"), NO_COLOR: "1", FAKE_FAIL_JUDGE: "1" },
+  });
+  assert.equal(failed.status, 1);
+  assert.doesNotMatch(failed.stderr, /battler continue` will have them judged/);
+  assert.equal(readFileSync(file, "utf8"), before);
+});

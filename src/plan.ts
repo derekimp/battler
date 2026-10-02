@@ -36,6 +36,8 @@ export interface Plan {
   replaces?: string;
   /** Compare mode: one round of answers, no debate, no judges. */
   compare?: boolean;
+  /** Debating a saved comparison: it's only replaced once the debate has a verdict. */
+  fromCompare?: boolean;
 }
 
 export const displayPath = (f: string) => (relative(process.cwd(), f).startsWith("..") ? f : relative(process.cwd(), f));
@@ -181,7 +183,12 @@ export async function continuePlan(
   }
   if (saved.compare) {
     // Debate a comparison: rebuttals on the answers, then the judges. It becomes a full battle.
+    const answered = new Set(saved.rounds.at(-1)?.map((t) => t.agentId));
+    if ([...answered].filter((id) => agents.some((a) => a.id === id)).length < 2) {
+      throw new PlanError("only one AI answered this comparison, so there's nothing to debate. Ask it again to get everyone's answer.");
+    }
     return {
+      fromCompare: true,
       topic: saved.topic,
       agents,
       judges,

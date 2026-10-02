@@ -139,6 +139,13 @@ test("compare mode shows the answers side by side, then 'Have them debate it' ma
   assert.equal(await historyCount(page), before + 1);
   assert.match(await page.locator("#history a").first().textContent() ?? "", /answers compared/);
 
+  // The share image of a comparison: a column per AI.
+  await page.click(".followbar #share");
+  await page.waitForSelector(".share-dialog[open] img");
+  assert.equal(await page.evaluate(() => document.querySelector<HTMLImageElement>(".share-dialog img")!.naturalWidth), 2400);
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".share-dialog", { state: "detached" });
+
   await page.click("#debate-it");
   await verdict(page);
   assert.equal(await historyCount(page), before + 1, "the same entry, now a full battle");

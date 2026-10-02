@@ -534,8 +534,10 @@ function renderLive(jobId) {
         if (e.battle.compare) {
           // The answers are the result; the cards above already show them in full.
           rounds.remove();
-          $("#verdict-slot").insertAdjacentHTML("beforeend", debateItHtml());
-          $("#debate-it").addEventListener("click", () => finishBattle(e.battle.id));
+          if (canDebate(e.battle)) {
+            $("#verdict-slot").insertAdjacentHTML("beforeend", debateItHtml());
+            $("#debate-it").addEventListener("click", () => finishBattle(e.battle.id));
+          }
           history.replaceState(null, "", `#/b/${encodeURIComponent(e.battle.id)}`);
           followBar(e.battle);
           loadHistory();
@@ -592,7 +594,7 @@ async function renderSaved(id) {
   const lengthName = LENGTHS.find((l) => l.value === b.length)?.title ?? b.length;
   const judged = b.judges.length > 1 ? `judged by a panel of ${b.judges.length}` : `judged by ${b.judges[0]}`;
   const verdictPart = b.compare
-    ? `<div class="fade-in">${b.verdictHtml}</div>${debateItHtml()}`
+    ? `<div class="fade-in">${b.verdictHtml}</div>${canDebate(b) ? debateItHtml() : ""}`
     : b.incomplete
     ? `<section class="card error-card fade-in"><h2>This battle stopped before the verdict</h2>
         <p class="muted">Its ${b.rounds} round${b.rounds === 1 ? " is" : "s are"} saved below. The judges can score them now.</p>
@@ -610,6 +612,9 @@ async function renderSaved(id) {
   followBar(b);
   renderHistory();
 }
+
+/** A comparison can be debated only if at least two AIs answered. */
+const canDebate = (battle) => (battle.card?.positions.length ?? 0) >= 2;
 
 /** Under a comparison: have them debate these answers, which makes it a full battle. */
 function debateItHtml() {
@@ -777,7 +782,7 @@ function drawShareCard(card, colorOf) {
     const maxBottom = footerY - 36;
     const small = cols.length > 3;
     const lineH = small ? 27 : 30;
-    const room = Math.max(1, Math.floor((maxBottom - top - 76) / lineH));
+    const room = Math.max(1, Math.floor((maxBottom - y - 76) / lineH));
     font(small ? 18 : 20);
     const wrapped = cols.map((c) => canvasLines(ctx, c.text, colW - 44, room));
     // As tall as the longest answer needs, no taller, and centred in the space left.
@@ -852,7 +857,8 @@ function openShare(battle) {
     b.textContent = "Creating…";
     try {
       const { url } = await api(`/api/battles/${encodeURIComponent(battle.id)}/share`, { method: "POST" });
-      await navigator.clipboard.writeText(url).catch(() => {});
+      // Not available over plain http (--lan); the link is shown either way.
+      await navigator.clipboard?.writeText(url).catch(() => {});
       note.innerHTML = `Link copied: <a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a>`;
       b.textContent = "Link created";
     } catch (err) {
@@ -873,7 +879,9 @@ function followBar(battle) {
       <button class="btn primary" type="submit">Ask</button>
       ${
         battle.compare
-          ? '<button class="btn" type="button" id="more" title="They debate these answers, then judge">Debate <span class="label-long">it</span></button>'
+          ? canDebate(battle)
+            ? '<button class="btn" type="button" id="more" title="They debate these answers, then judge">Debate <span class="label-long">it</span></button>'
+            : ""
           : '<button class="btn" type="button" id="more" title="Another round on the same question">+1 <span class="label-long">round</span></button>'
       }
       ${battle.card ? '<button class="btn" type="button" id="share" title="An image or a link to post anywhere">Share</button>' : ""}
@@ -896,7 +904,7 @@ function followBar(battle) {
     if (q) go({ question: q });
     else $("#follow", bar).focus();
   });
-  $("#more", bar).addEventListener("click", () => go({ more: true }));
+  $("#more", bar)?.addEventListener("click", () => go({ more: true }));
   $("#share", bar)?.addEventListener("click", () => openShare(battle));
 }
 

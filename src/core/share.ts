@@ -65,7 +65,7 @@ export function createGist(markdown: string, filename: string, description: stri
     child.stdout.on("data", (d) => (out += d));
     child.stderr.on("data", (d) => (err += d));
     child.on("error", (e: NodeJS.ErrnoException) =>
-      reject(new Error(e.code === "ENOENT" ? "Sharing a link needs the GitHub CLI: brew install gh, then gh auth login." : e.message)),
+      reject(new Error(e.code === "ENOENT" ? "Sharing a link needs the GitHub CLI (https://cli.github.com), signed in with gh auth login." : e.message)),
     );
     child.on("close", (code) => {
       const url = out.match(/https:\/\/gist\.github\.com\/\S+/)?.[0];
@@ -73,6 +73,8 @@ export function createGist(markdown: string, filename: string, description: stri
       if (/auth login|not logged|authenticat/i.test(err)) return reject(new Error("Sign in to GitHub first: gh auth login"));
       reject(new Error(`Couldn't create the gist: ${(err || out).trim().split("\n").at(-1) || `gh exited with ${code}`}`));
     });
+    // gh may exit (say, not logged in) before reading a long report; that's reported on close.
+    child.stdin.on("error", () => {});
     child.stdin.end(markdown);
   });
 }

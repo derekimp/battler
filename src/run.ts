@@ -61,9 +61,12 @@ export async function runPlan(
   const jsonFile = join(opts.outDir, `${id}.json`);
   let savedRounds = 0;
 
-  // Save the rounds as they finish, so a failure later (or Ctrl+C) doesn't lose them.
+  // Save the rounds as they finish, so a failure later (or Ctrl+C) doesn't lose them. Not for a
+  // comparison (one round, nothing to resume), nor while debating one: the comparison stays as it
+  // was until the debate has its verdict.
+  const saveRounds = !plan.compare && !plan.fromCompare;
   const onEvent = (e: BattleEvent) => {
-    if (e.type === "round-done") {
+    if (e.type === "round-done" && saveRounds) {
       try {
         const partial = toIncomplete(
           { topic: plan.topic, length: plan.length, rounds: e.history, labels: e.labels, followUpOf: plan.followUp?.topic ?? plan.followUpOf },

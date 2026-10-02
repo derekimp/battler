@@ -339,7 +339,9 @@ async function execute(plan: Plan, outDir: string, openIt: boolean, json: boolea
       `Report: ${displayPath(htmlFile)}`,
       openIt ? "Opening it in your browser." : "Add --open to view it in your browser.",
       result.compare
-        ? `Follow up: battler continue "your question"   ·   have them debate it: battler continue`
+        ? (result.rounds.at(-1)?.length ?? 0) >= 2
+          ? `Follow up: battler continue "your question"   ·   have them debate it: battler continue`
+          : `Follow up: battler continue "your question"`
         : `Follow up: battler continue "your question"   ·   more rounds: battler continue`,
       "Share a link to it: battler share",
     );
