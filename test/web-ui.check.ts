@@ -77,6 +77,13 @@ test("home: the AIs' status, and Start waits for a topic", async () => {
   await page.fill("#topic", "Tabs or spaces?");
   assert.ok(await page.isEnabled("#start"));
   assert.match(await page.textContent("#cost") ?? "", /About 9 AI calls/);
+  // Rounds are right there, not tucked into More options.
+  assert.ok(await page.isVisible("#rounds-row .stepper"));
+  await page.click('[data-step="1"]');
+  assert.equal(await page.textContent("#rounds"), "3");
+  assert.match(await page.textContent("#rounds-hint") ?? "", /Two rebuttals/);
+  assert.match(await page.textContent("#cost") ?? "", /About 12 AI calls/);
+  await page.click('[data-step="-1"]');
   await page.click('[data-id="codex"]');
   assert.match(await page.textContent("#cost") ?? "", /About 6 AI calls/);
   await page.click('[data-id="grok"]');
@@ -128,7 +135,8 @@ test("compare mode shows the answers side by side, then 'Have them debate it' ma
   await page.waitForSelector("#start");
   const before = await historyCount(page);
   await page.click('[data-mode="compare"]');
-  assert.ok(await page.isHidden("#more-options"), "no rounds or judges to choose");
+  assert.ok(await page.isHidden("#more-options"), "no judges to choose");
+  assert.ok(await page.isHidden("#rounds-row"), "no rounds to choose");
   assert.match(await page.textContent("#cost") ?? "", /About 3 AI calls/);
   assert.match(await page.textContent("#start") ?? "", /Compare answers/);
   await page.fill("#topic", "Best way to learn SQL?");

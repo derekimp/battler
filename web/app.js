@@ -30,6 +30,13 @@ const LENGTHS = [
   { value: "medium", title: "Standard", hint: "2–3 min · the full verdict" },
   { value: "long", title: "Deep", hint: "5+ min · every angle, in depth" },
 ];
+const ROUND_HINTS = {
+  1: "Just their first answers, then judged",
+  2: "One rebuttal each. Usually the best value",
+  3: "Two rebuttals. They tend to agree by now",
+  4: "Long; for hard, contested questions",
+  5: "The most there is",
+};
 const EXAMPLES = [
   "Is a hot dog a sandwich?",
   "Should I learn Python or JavaScript first?",
@@ -238,14 +245,16 @@ function renderNew() {
           ).join("")}
         </div>
       </div>
+      <div id="rounds-row" class="rounds-row" ${d.mode === "compare" ? "hidden" : ""}>
+        <div class="opt-label">Rounds <small>· including the opening</small></div>
+        <div class="rounds-line">
+          <div class="stepper"><button type="button" data-step="-1" aria-label="Fewer rounds">−</button><output id="rounds">${d.rounds}</output><button type="button" data-step="1" aria-label="More rounds">+</button></div>
+          <span class="muted" id="rounds-hint"></span>
+        </div>
+      </div>
       <details class="more" id="more-options" ${d.mode === "compare" ? "hidden" : ""}>
         <summary>More options</summary>
         <div class="more-grid">
-          <div>
-            <div class="opt-label">Rounds <small>· including the opening</small></div>
-            <div class="stepper"><button type="button" data-step="-1" aria-label="Fewer rounds">−</button><output id="rounds">${d.rounds}</output><button type="button" data-step="1" aria-label="More rounds">+</button></div>
-            <p class="muted" style="font-size:13px;margin:8px 0 0">2–3 is usually best. They tend to agree by round 3.</p>
-          </div>
           <div>
             <div class="opt-label">Judging</div>
             <label class="radio"><input type="radio" name="judge" value="panel" ${d.judge === "panel" ? "checked" : ""}><span>Panel <small>Every AI scores the others; nobody scores itself. Fairest.</small></span></label>
@@ -301,7 +310,7 @@ function renderNew() {
     if (!b) return;
     d.mode = b.dataset.mode;
     view.querySelectorAll("[data-mode]").forEach((x) => x.setAttribute("aria-checked", String(x === b)));
-    $("#more-options").hidden = d.mode === "compare";
+    $("#more-options").hidden = $("#rounds-row").hidden = d.mode === "compare";
     $("#start-label").textContent = d.mode === "compare" ? "Compare answers" : "Start battle";
     updateCost();
   });
@@ -340,6 +349,7 @@ function renderNew() {
   });
 
   function updateCost() {
+    $("#rounds-hint").textContent = ROUND_HINTS[d.rounds] ?? "";
     const n = d.selected.size;
     const calls = d.mode === "compare" ? n : n * d.rounds + (d.judge === "panel" ? n : 1);
     $("#cost").textContent = n < 2 ? "Pick at least 2 debaters" : `About ${calls} AI calls on your plans`;

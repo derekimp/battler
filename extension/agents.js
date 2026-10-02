@@ -6,15 +6,19 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const withSystem = (prompt, system) => (system ? `${system}\n\n---\n\n${prompt}` : prompt);
 
 /* ── Tabs battler owns ─────────────────────────────────────────────────── */
-// battler opens its own tab per site (kept in a "battler" tab group) rather than taking over
-// a tab you're using.
+// battler opens its own tab per site rather than taking over a tab you're using. They sit in a
+// collapsed "battler" tab group: one small label in the tab bar. They're background tabs either way,
+// so collapsing doesn't change how they run.
 async function ownedTab(site) {
   const key = `tab:${site.id}`;
   const { [key]: id } = await chrome.storage.session.get(key);
   if (id) {
     try {
       const tab = await chrome.tabs.get(id);
-      if (tab.url && new URL(tab.url).hostname === new URL(site.home).hostname) return tab;
+      if (tab.url && new URL(tab.url).hostname === new URL(site.home).hostname) {
+        await tuckAway(tab.groupId);
+        return tab;
+      }
     } catch {}
   }
   const tab = await chrome.tabs.create({ url: site.home, active: false });
@@ -22,13 +26,24 @@ async function ownedTab(site) {
   try {
     const { group } = await chrome.storage.session.get("group");
     const groupId = await chrome.tabs.group({ tabIds: [tab.id], ...(group ? { groupId: group } : {}) });
-    await chrome.tabGroups.update(groupId, { title: "battler", color: "grey", collapsed: false });
+    await chrome.tabGroups.update(groupId, { title: "battler", color: "grey" });
     await chrome.storage.session.set({ group: groupId });
+    await tuckAway(groupId);
   } catch {
     // The group was closed: make a new one next time.
     await chrome.storage.session.remove("group");
   }
   return tab;
+}
+
+/** Collapse battler's tab group, unless you're looking at one of its tabs (Chrome won't, then). */
+async function tuckAway(groupId) {
+  if (!groupId || groupId < 0) return;
+  try {
+    await chrome.tabGroups.update(groupId, { collapsed: true });
+  } catch {
+    // The active tab is in the group; leave it open.
+  }
 }
 
 async function waitLoaded(tabId, timeout = 30_000) {

@@ -19,7 +19,12 @@ const LENGTHS = [
 const EXAMPLES = ["Is a hot dog a sandwich?", "Python or JavaScript first?", "Rent or buy a home in 2026?"];
 const HISTORY_LIMIT = 50;
 
-const prefs = { selected: new Set(SITES.map((s) => s.id)), mode: "auto", length: "medium", topic: "" };
+const prefs = { selected: new Set(SITES.map((s) => s.id)), mode: "auto", length: "medium", rounds: 2, topic: "" };
+const ROUNDS = [
+  { value: 1, title: "1 round", hint: "answers only, then judged" },
+  { value: 2, title: "2 rounds", hint: "one rebuttal (best value)" },
+  { value: 3, title: "3 rounds", hint: "two rebuttals, in depth" },
+];
 let statuses = {};
 let running = null; // { controller }
 
@@ -29,7 +34,7 @@ async function loadPrefs() {
   if (p) Object.assign(prefs, p, { selected: new Set(p.selected ?? SITES.map((s) => s.id)) });
 }
 const savePrefs = () =>
-  chrome.storage.local.set({ prefs: { selected: [...prefs.selected], mode: prefs.mode, length: prefs.length } });
+  chrome.storage.local.set({ prefs: { selected: [...prefs.selected], mode: prefs.mode, length: prefs.length, rounds: prefs.rounds } });
 
 async function history() {
   const { battles = [] } = await chrome.storage.local.get("battles");
@@ -111,7 +116,7 @@ function renderNew() {
       </div>
       <p class="help">${
         prefs.mode === "auto"
-          ? "battler opens its own tabs (grouped as “battler”) and uses temporary chats, so your history stays clean. If a site changes and automatic stops working, switch to copy &amp; paste."
+          ? "battler works in its own background tabs, tucked into a collapsed “battler” group, and uses temporary chats, so your history stays clean. If a site changes and automatic stops working, switch to copy &amp; paste."
           : "battler shows each message to send; you paste it into the site and paste the reply back. Slower, but works even when a site changes."
       }</p>
     </div>
@@ -120,6 +125,13 @@ function renderNew() {
       <div class="label">Length</div>
       <div class="seg" role="radiogroup" id="lengths">${LENGTHS.map(
         (l) => `<button type="button" role="radio" data-length="${l.value}" aria-checked="${prefs.length === l.value}"><b>${l.title}</b>${l.hint}</button>`,
+      ).join("")}</div>
+    </div>
+
+    <div class="section">
+      <div class="label">Rounds</div>
+      <div class="seg" role="radiogroup" id="rounds-pick">${ROUNDS.map(
+        (r) => `<button type="button" role="radio" data-rounds="${r.value}" aria-checked="${prefs.rounds === r.value}"><b>${r.title}</b>${r.hint}</button>`,
       ).join("")}</div>
     </div>
 
@@ -173,12 +185,19 @@ function renderNew() {
     savePrefs();
     update();
   });
+  $("#rounds-pick").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-rounds]");
+    if (!b) return;
+    prefs.rounds = Number(b.dataset.rounds);
+    view.querySelectorAll("[data-rounds]").forEach((x) => x.setAttribute("aria-checked", String(x === b)));
+    savePrefs();
+    update();
+  });
   $("#start").addEventListener("click", start);
 
   function update() {
     const n = prefs.selected.size;
-    const rounds = 2;
-    const calls = n * rounds + (prefs.length === "short" ? 1 : n);
+    const calls = n * prefs.rounds + (prefs.length === "short" ? 1 : n);
     $("#cost").textContent =
       n < 2 ? "Pick at least 2 debaters." : `About ${calls} messages across your accounts. Keep this panel open while it runs.`;
     $("#start").disabled = n < 2 || !prefs.topic.trim();
@@ -189,7 +208,7 @@ function renderNew() {
     if ($("#start").disabled) return;
     const topicText = prefs.topic.trim();
     prefs.topic = "";
-    runLive({ topic: topicText, siteIds: SITES.filter((s) => prefs.selected.has(s.id)).map((s) => s.id), length: prefs.length, rounds: 2 });
+    runLive({ topic: topicText, siteIds: SITES.filter((s) => prefs.selected.has(s.id)).map((s) => s.id), length: prefs.length, rounds: prefs.rounds });
   }
 }
 
@@ -487,7 +506,7 @@ function showSaved(entry, { fresh = false } = {}) {
     e.preventDefault();
     const q = $("input", bar).value.trim();
     if (!q) return;
-    runLive({ topic: q, siteIds, length: saved.length, rounds: 2, continueFrom: entry, question: q });
+    runLive({ topic: q, siteIds, length: saved.length, rounds: prefs.rounds, continueFrom: entry, question: q });
   });
   $("[data-more]", bar).addEventListener("click", () =>
     runLive({ topic: saved.topic, siteIds, length: saved.length, rounds: 1, continueFrom: entry, more: true }),
