@@ -6,6 +6,7 @@ New:
 
 - **Compare mode** (`-c` / **Just compare**): each AI answers once, side by side, with no debate or judging. One message per AI. `battler continue` (or **Have them debate it**) turns a comparison into a full battle.
 - **Sharing:** the web app makes an image of a result to copy or download; `battler share` (or **Create a link**) uploads the report as a secret GitHub Gist with your own `gh` login.
+- **A clean slate:** debaters and judges are told to ignore anything they know about you (Claude Code adds your account email, Cursor your user rules), so answers aren't tailored to you or your past chats.
 - **Linux** is supported and tested in CI. `npx battler "…"` runs it without installing.
 
 Hardening against failures:

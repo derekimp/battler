@@ -280,3 +280,12 @@ test("if debating a comparison fails, the comparison is kept as it was", () => {
   assert.doesNotMatch(failed.stderr, /battler continue` will have them judged/);
   assert.equal(readFileSync(file, "utf8"), before);
 });
+
+test("debaters and judges are told to start fresh, ignoring what they know about the person", async () => {
+  const { DEBATER_SYSTEM, JUDGE_SYSTEM, FRESH_START } = await import("../src/core/prompts.ts");
+  for (const system of [DEBATER_SYSTEM, JUDGE_SYSTEM]) assert.ok(system.includes(FRESH_START));
+  const seen: string[] = [];
+  const agent = (id: string, name: string) => fakeAgent(id, (_p, o) => (seen.push(o.system ?? ""), "## Position\nok"), name);
+  await runBattle({ topic: "T?", agents: [agent("claude", "Claude"), agent("codex", "GPT")], judges: [], rounds: 1, length: "short" });
+  assert.ok(seen.length === 2 && seen.every((s) => s.includes("fresh, standalone session")));
+});

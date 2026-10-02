@@ -240,6 +240,9 @@ It isn't in the Chrome Web Store yet. To try it:
   same as typing the prompts yourself.
 - **Sandboxed.** The CLIs are coding agents, so battler runs them with no tools (Claude), read-only (Codex,
   Gemini) or in ask mode (Cursor), in an empty temporary folder. They never see your files.
+- **A clean slate every time.** Each AI is told to ignore what it knows about you (Claude Code passes it
+  your account email, Cursor your user rules) and answer as it would for anyone. The extension uses
+  ChatGPT's temporary chats and Claude's incognito mode, which leave memory out.
 - **Terms.** battler invokes each vendor's official CLI in its documented non-interactive mode. You're
   responsible for using your accounts within Anthropic's, OpenAI's, Cursor's and Google's terms.
 
