@@ -16,7 +16,7 @@ async function ownedTab(site) {
     try {
       const tab = await chrome.tabs.get(id);
       if (tab.url && new URL(tab.url).hostname === new URL(site.home).hostname) {
-        await tuckAway(tab.groupId);
+        await joinGroup(tab.id);
         return tab;
       }
     } catch {}
@@ -25,17 +25,38 @@ async function ownedTab(site) {
   // Memory Saver mustn't discard a tab mid-reply.
   await chrome.tabs.update(tab.id, { autoDiscardable: false }).catch(() => {});
   await chrome.storage.session.set({ [key]: tab.id });
-  try {
-    const { group } = await chrome.storage.session.get("group");
-    const groupId = await chrome.tabs.group({ tabIds: [tab.id], ...(group ? { groupId: group } : {}) });
-    await chrome.tabGroups.update(groupId, { title: "battler", color: "grey" });
-    await chrome.storage.session.set({ group: groupId });
-    await tuckAway(groupId);
-  } catch {
-    // The group was closed: make a new one next time.
-    await chrome.storage.session.remove("group");
-  }
+  await joinGroup(tab.id);
   return tab;
+}
+
+/**
+ * Put a tab in the one "battler" group of its window, making the group if there's none. Every
+ * site's tab opens at once when a battle starts, so this runs one tab at a time; otherwise each
+ * would find no group yet and make its own.
+ */
+let grouping = Promise.resolve();
+function joinGroup(tabId) {
+  const run = grouping.then(async () => {
+    const tab = await chrome.tabs.get(tabId);
+    const { group } = await chrome.storage.session.get("group");
+    let target = null;
+    if (group != null) {
+      const g = await chrome.tabGroups.get(group).catch(() => null);
+      if (g && g.windowId === tab.windowId) target = g.id;
+    }
+    if (target == null) {
+      const [existing] = await chrome.tabGroups.query({ title: "battler", windowId: tab.windowId });
+      target = existing?.id ?? null;
+    }
+    if (tab.groupId !== target || target == null) {
+      target = await chrome.tabs.group({ tabIds: [tabId], ...(target != null ? { groupId: target } : {}) });
+    }
+    await chrome.tabGroups.update(target, { title: "battler", color: "grey" });
+    await chrome.storage.session.set({ group: target });
+    await tuckAway(target);
+  });
+  grouping = run.catch(() => {});
+  return grouping;
 }
 
 /**

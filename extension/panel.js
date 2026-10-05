@@ -136,8 +136,8 @@ function renderNew() {
       ).join("")}</div>
     </div>
 
-    <div class="section">
-      <button class="btn primary block" id="start">Start battle</button>
+    <div class="startbar">
+      <button class="btn primary block" id="start">Start battle <span class="kbd">⌘↵</span></button>
       <p class="fine" id="cost"></p>
     </div>`;
 

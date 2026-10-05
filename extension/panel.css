@@ -115,3 +115,8 @@ h1.title { font-size: 22px; line-height: 1.2; letter-spacing: -.02em; margin: 16
 .fade-in { animation: fade .3s ease both; }
 @keyframes fade { from { opacity: 0; transform: translateY(4px) } to { opacity: 1; transform: none } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+/* Start stays in reach while the options scroll under it. */
+.startbar { position: sticky; bottom: 0; z-index: 3; margin: 18px -14px 0; padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(8px); border-top: 1px solid var(--line); }
+.startbar .fine { margin-top: 6px; }
+.btn .kbd { font-weight: 500; opacity: .6; font-size: 12px; margin-left: 4px; }
