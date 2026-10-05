@@ -167,13 +167,26 @@ export function tabAgent(site, { onProgress } = {}) {
             port.disconnect();
             reject(new Error(`${site.name} took longer than 9 minutes`));
           }, 9 * 60_000);
-          // The page reports in at least every 10s while it waits for the reply. If it goes quiet,
-          // Chrome has most likely paused the background tab; say so instead of waiting forever.
+          // The page reports in every few seconds while it works. If it goes quiet, Chrome has most
+          // likely frozen the background tab (it does after a few minutes, more so on Energy Saver),
+          // and a frozen page can't ask for help itself: show it for a moment to wake it, a few times,
+          // before giving up with a clear message.
           let heard = Date.now();
-          const watchdog = setInterval(() => {
-            if (Date.now() - heard < 150_000) return;
+          let wakes = 0;
+          let waking = false;
+          const watchdog = setInterval(async () => {
+            const quiet = Date.now() - heard;
+            if (quiet < 25_000 || waking) return;
+            if (wakes < 5 && quiet >= 25_000 * (wakes + 1)) {
+              wakes++;
+              waking = true;
+              await showBriefly(tab.id).catch(() => {});
+              waking = false;
+              return;
+            }
+            if (quiet < 180_000) return;
             port.disconnect();
-            finish(reject, new Error(`${site.name}'s tab stopped responding. Chrome may have paused it in the background; open the "battler" tab group to wake it, then try again`));
+            finish(reject, new Error(`${site.name}'s tab stopped responding (Chrome seems to have frozen it in the background, and showing it didn't wake it). Open the "battler" tab group and start the battle again`));
           }, 5_000);
           const finish = (fn, v) => {
             clearTimeout(timer);

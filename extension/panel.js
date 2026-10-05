@@ -381,7 +381,11 @@ async function runLive({ topic, siteIds, length, rounds, continueFrom, question,
       case "retry": {
         const agent = agents.find((a) => a.name === e.agentName);
         const note = agent && view.querySelector(`#round-${e.round} .turn.pending[data-site="${agent.id}"] .thinking`);
-        if (note) note.childNodes[1].textContent = "Hit a hiccup, trying again";
+        if (note) {
+          const why = e.error.split("\n")[0];
+          note.childNodes[1].textContent = `Hit a hiccup (${why.length > 70 ? `${why.slice(0, 70)}…` : why}), trying again`;
+          note.title = e.error;
+        }
         break;
       }
       case "round-start": {

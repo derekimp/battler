@@ -370,6 +370,8 @@
       if (msg?.type !== "ask") return;
       if (busy) return port.postMessage({ type: "error", error: "this tab is already answering another prompt" });
       busy = true;
+      // A heartbeat for as long as this works, so the panel can tell slow from frozen.
+      const alive = setInterval(() => port.postMessage({ type: "alive" }), 5_000);
       try {
         // The panel shows the tab for a moment and answers "shown".
         const nudge = () =>
@@ -388,6 +390,7 @@
       } catch (e) {
         port.postMessage({ type: "error", error: e.message, status: status() });
       } finally {
+        clearInterval(alive);
         busy = false;
       }
     });
