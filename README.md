@@ -16,7 +16,7 @@ every call uses the subscriptions you already pay for.
 
 **[Website](https://derekimp.github.io/battler/)** · **[Latest release](https://github.com/derekimp/battler/releases/latest)**
 
-![The battler web app: Claude, GPT and Grok debate "Is it still worth learning to code in 2026?", then judge each other and show a verdict and scorecard](https://raw.githubusercontent.com/derekimp/battler/main/docs/demo-web.gif)
+![The battler web app: Claude, GPT, Grok and Gemini compare answers to "Is it still worth learning to code in 2026?", then debate them, judge each other blind and show a verdict, a scorecard and a share image](https://raw.githubusercontent.com/derekimp/battler/main/docs/demo-web.gif)
 
 <sub>A real battle in the web app, with the waiting sped up. [MP4 version](https://github.com/derekimp/battler/blob/main/docs/demo-web.mp4).</sub>
 
