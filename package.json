@@ -1,6 +1,6 @@
 {
   "name": "battler",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Make your AI subscriptions (Claude, ChatGPT, Grok) debate each other, then judge each other blind. No API keys.",
   "author": "derekimp",
   "repository": {
