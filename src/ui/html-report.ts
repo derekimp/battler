@@ -33,8 +33,9 @@ function tagNames(html: string, names: string[]): string {
 /** A complete, self-contained HTML page for one battle. */
 export function renderHtmlReport(result: BattleResult, date = new Date()): string {
   const names = [...result.names.values()];
-  const judged =
-    result.judges.length === 1
+  const judged = result.compare
+    ? "compared side by side, not judged"
+    : result.judges.length === 1
       ? `judged by ${escapeHtml(result.judges[0])}`
       : `judged by a panel of ${result.judges.length}`;
 
@@ -48,7 +49,7 @@ export function renderHtmlReport(result: BattleResult, date = new Date()): strin
 
   const verdictHtml = renderVerdictHtml(result);
 
-  const rounds = renderRoundsHtml(result);
+  const rounds = result.compare ? "" : renderRoundsHtml(result);
 
   const dropped = result.dropped.length
     ? `<p class="dropped">Dropped: ${result.dropped.map((d) => `${escapeHtml(d.agentName)} (round ${d.round}): ${escapeHtml(d.error.split("\n")[0])}`).join("; ")}</p>`
@@ -68,16 +69,23 @@ export function renderHtmlReport(result: BattleResult, date = new Date()): strin
   <div class="brand">battler</div>
   ${result.followUpOf ? `<p class="muted followup">Follow-up to: ${escapeHtml(result.followUpOf)}</p>` : ""}
   <h1>${escapeHtml(result.topic)}</h1>
+  ${(result.attachments ?? [])
+    .map((a) => `<p class="muted followup">📎 Shared ChatGPT chat: <a href="${escapeHtml(a.url)}">${escapeHtml(a.title)}</a> (${a.messages} messages)</p>`)
+    .join("")}
   <div class="meta">${chips}<span class="muted">${meta}</span></div>
   ${dropped}
 </header>
 ${verdictHtml}
-<section class="transcript">
+${
+  rounds
+    ? `<section class="transcript">
   <h2>Transcript</h2>
   <p class="muted">Debaters saw each other, and the judges saw them, only as "Debater A/B/C", shuffled each battle. Real names are shown here.</p>
   ${rounds}
-</section>
-<footer>Made with <strong>battler</strong>: AI subscriptions debating each other.</footer>
+</section>`
+    : ""
+}
+<footer>Made with <a href="https://github.com/derekimp/battler"><strong>battler</strong></a>: AI subscriptions debating each other.</footer>
 </main>
 </body>
 </html>
@@ -89,6 +97,11 @@ ${verdictHtml}
 export function renderVerdictHtml(result: BattleResult): string {
   const names = [...result.names.values()];
   const inl = (s: string) => tagNames(inlineHtml(s), names);
+  if (result.compare) {
+    // Compare mode: the answers are the result.
+    const cards = (result.rounds.at(-1) ?? []).map((t) => renderTurnHtml(t, result.names)).join("\n");
+    return `<section class="compare"><h2>Their answers</h2><div class="turns">${cards}</div></section>`;
+  }
   const v = namedVerdict(result);
   let verdictHtml: string;
   if (!v) {
@@ -239,6 +252,7 @@ section.two{margin:18px 0}
 .round{margin:12px 0}
 .round summary{cursor:pointer;font-weight:600;padding:8px 0;list-style-position:outside}
 .round summary span{color:var(--muted);font-weight:500;margin-right:6px}
+.compare{margin:28px 0}
 .turns{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-top:8px}
 .turn{background:var(--card);border:1px solid var(--line);border-top:3px solid var(--c);border-radius:12px;padding:16px 18px;font-size:14.5px;min-width:0}
 .turn header{display:flex;justify-content:space-between;margin-bottom:6px}
@@ -254,5 +268,6 @@ section.two{margin:18px 0}
 table{border-collapse:collapse;font-size:13.5px}
 th,td{border:1px solid var(--line);padding:4px 8px;text-align:left;vertical-align:top}
 footer{margin-top:48px;text-align:center;color:var(--muted);font-size:13px}
+footer a{color:inherit}
 @media (max-width:600px){main{padding:24px 16px 48px}.card{padding:18px}.score-head{grid-template-columns:minmax(64px,max-content) 1fr 40px}}
 `;

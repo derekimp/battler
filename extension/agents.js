@@ -6,29 +6,81 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const withSystem = (prompt, system) => (system ? `${system}\n\n---\n\n${prompt}` : prompt);
 
 /* ── Tabs battler owns ─────────────────────────────────────────────────── */
-// battler opens its own tab per site (kept in a "battler" tab group) rather than taking over
-// a tab you're using.
+// battler opens its own tab per site rather than taking over a tab you're using. They sit in a
+// collapsed "battler" tab group: one small label in the tab bar. They're background tabs either way,
+// so collapsing doesn't change how they run.
 async function ownedTab(site) {
   const key = `tab:${site.id}`;
   const { [key]: id } = await chrome.storage.session.get(key);
   if (id) {
     try {
       const tab = await chrome.tabs.get(id);
-      if (tab.url && new URL(tab.url).hostname === new URL(site.home).hostname) return tab;
+      if (tab.url && new URL(tab.url).hostname === new URL(site.home).hostname) {
+        await joinGroup(tab.id);
+        return tab;
+      }
     } catch {}
   }
   const tab = await chrome.tabs.create({ url: site.home, active: false });
+  // Memory Saver mustn't discard a tab mid-reply.
+  await chrome.tabs.update(tab.id, { autoDiscardable: false }).catch(() => {});
   await chrome.storage.session.set({ [key]: tab.id });
-  try {
-    const { group } = await chrome.storage.session.get("group");
-    const groupId = await chrome.tabs.group({ tabIds: [tab.id], ...(group ? { groupId: group } : {}) });
-    await chrome.tabGroups.update(groupId, { title: "battler", color: "grey", collapsed: false });
-    await chrome.storage.session.set({ group: groupId });
-  } catch {
-    // The group was closed: make a new one next time.
-    await chrome.storage.session.remove("group");
-  }
+  await joinGroup(tab.id);
   return tab;
+}
+
+/**
+ * Put a tab in the one "battler" group of its window, making the group if there's none. Every
+ * site's tab opens at once when a battle starts, so this runs one tab at a time; otherwise each
+ * would find no group yet and make its own.
+ */
+let grouping = Promise.resolve();
+function joinGroup(tabId) {
+  const run = grouping.then(async () => {
+    const tab = await chrome.tabs.get(tabId);
+    const { group } = await chrome.storage.session.get("group");
+    let target = null;
+    if (group != null) {
+      const g = await chrome.tabGroups.get(group).catch(() => null);
+      if (g && g.windowId === tab.windowId) target = g.id;
+    }
+    if (target == null) {
+      const [existing] = await chrome.tabGroups.query({ title: "battler", windowId: tab.windowId });
+      target = existing?.id ?? null;
+    }
+    if (tab.groupId !== target || target == null) {
+      target = await chrome.tabs.group({ tabIds: [tabId], ...(target != null ? { groupId: target } : {}) });
+    }
+    await chrome.tabGroups.update(target, { title: "battler", color: "grey" });
+    await chrome.storage.session.set({ group: target });
+    await tuckAway(target);
+  });
+  grouping = run.catch(() => {});
+  return grouping;
+}
+
+/**
+ * Show a battler tab for a moment, then go back to the tab you were on. Chrome doesn't render
+ * background tabs, and some sites (Gemini's send button, for one) only act when a frame renders.
+ */
+async function showBriefly(tabId) {
+  const tab = await chrome.tabs.get(tabId).catch(() => null);
+  if (!tab || tab.active) return;
+  const [previous] = await chrome.tabs.query({ active: true, windowId: tab.windowId });
+  await chrome.tabs.update(tabId, { active: true });
+  await sleep(600);
+  if (previous) await chrome.tabs.update(previous.id, { active: true }).catch(() => {});
+  await tuckAway(tab.groupId);
+}
+
+/** Collapse battler's tab group, unless you're looking at one of its tabs (Chrome won't, then). */
+async function tuckAway(groupId) {
+  if (!groupId || groupId < 0) return;
+  try {
+    await chrome.tabGroups.update(groupId, { collapsed: true });
+  } catch {
+    // The active tab is in the group; leave it open.
+  }
 }
 
 async function waitLoaded(tabId, timeout = 30_000) {
@@ -115,11 +167,38 @@ export function tabAgent(site, { onProgress } = {}) {
             port.disconnect();
             reject(new Error(`${site.name} took longer than 9 minutes`));
           }, 9 * 60_000);
+          // The page reports in every few seconds while it works. If it goes quiet, Chrome has most
+          // likely frozen the background tab (it does after a few minutes, more so on Energy Saver),
+          // and a frozen page can't ask for help itself: show it for a moment to wake it, a few times,
+          // before giving up with a clear message.
+          let heard = Date.now();
+          let wakes = 0;
+          let waking = false;
+          const watchdog = setInterval(async () => {
+            const quiet = Date.now() - heard;
+            if (quiet < 25_000 || waking) return;
+            if (wakes < 5 && quiet >= 25_000 * (wakes + 1)) {
+              wakes++;
+              waking = true;
+              await showBriefly(tab.id).catch(() => {});
+              waking = false;
+              return;
+            }
+            if (quiet < 180_000) return;
+            port.disconnect();
+            finish(reject, new Error(`${site.name}'s tab stopped responding (Chrome seems to have frozen it in the background, and showing it didn't wake it). Open the "battler" tab group and start the battle again`));
+          }, 5_000);
           const finish = (fn, v) => {
             clearTimeout(timer);
+            clearInterval(watchdog);
             fn(v);
           };
           port.onMessage.addListener((m) => {
+            heard = Date.now();
+            if (m.type === "nudge") {
+              showBriefly(tab.id).finally(() => port.postMessage({ type: "shown" }));
+              return;
+            }
             if (m.type === "progress") onProgress?.(site.id, m.chars);
             else if (m.type === "done") finish(resolve, m.text);
             else if (m.type === "error") finish(reject, new Error(`${site.name}: ${m.error}`));

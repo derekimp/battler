@@ -6,13 +6,13 @@ import { parseArgs } from "node:util";
 import { AGENT_IDS, createAgent, cursorModelOf, cursorQuota } from "./adapters/cli-agents.ts";
 import { CONFIG_PATH, loadConfig, type Config } from "./config.ts";
 import { renderVerdictMarkdown } from "./core/report.ts";
-import { latestSaved, loadSaved } from "./core/saved.ts";
+import { latestSaved, loadSaved, savedToResult } from "./core/saved.ts";
 import type { Agent } from "./core/types.ts";
 import { LENGTHS, namedVerdict, type Length } from "./core/verdict.ts";
 import { Progress } from "./ui/progress.ts";
 import { debaterColor, formatDuration, style, termWidth } from "./ui/term.ts";
 import { renderVerdict } from "./ui/verdict-view.ts";
-import { continuePlan, displayPath, newPlan, type Plan } from "./plan.ts";
+import { battleSlug, continuePlan, displayPath, newPlan, type Plan } from "./plan.ts";
 import { runPlan, type RunOutput } from "./run.ts";
 import { defaultSetupDeps, runSetup } from "./setup.ts";
 import { terminalPrompter } from "./ui/prompt.ts";
@@ -26,6 +26,7 @@ Usage:
   battler setup            install and log in to the AI CLIs, pick your defaults
   battler continue "q"     follow-up question to your last battle, with it as background
   battler continue         another round on your last battle's topic
+  battler share            a link to your last battle (a secret GitHub Gist, via the gh CLI)
   echo "topic" | battler
   battler --doctor
 
@@ -42,6 +43,9 @@ Options:
                         how detailed the verdict is               (default: medium)
   -s, -m, -L            Shorthands for --length short / medium / long
   -r, --rounds <n>      Rounds including the opening (1-5)       (default: 2)
+  -c, --compare         Just compare: each AI answers once, side by side; no debate or
+                        judging. Quicker and uses 1 message per AI. Debate it later with
+                        battler continue
   -o, --out <dir>       Where to save the full Markdown report   (default: ./battles)
       --open            Open the report in your browser when the battle is done
       --from <report>   With continue: which battle to continue (default: the latest)
@@ -55,6 +59,12 @@ Options:
 
 Defaults can be set in ${CONFIG_PATH}
 Only subscription logins are used: API-key env vars are removed before each CLI runs.`;
+
+/** Open a file or address in the default browser (macOS `open`, Linux `xdg-open`). Best effort. */
+function openInBrowser(target: string) {
+  const cmd = process.platform === "darwin" ? "open" : "xdg-open";
+  spawn(cmd, [target], { stdio: "ignore", detached: true }).on("error", () => {}).unref();
+}
 
 function fail(msg: string): never {
   process.stderr.write(`battler: ${msg}\n`);
@@ -87,6 +97,7 @@ async function main() {
       short: { type: "boolean", short: "s" },
       medium: { type: "boolean", short: "m" },
       long: { type: "boolean", short: "L" },
+      compare: { type: "boolean", short: "c" },
       json: { type: "boolean" },
       open: { type: "boolean" },
       out: { type: "string", short: "o" },
@@ -117,7 +128,9 @@ async function main() {
       const model = cursorModelOf(a);
       const quota = model && cursorQuota(model);
       const detail = model ? err.dim(` · ${model}, Cursor's ${quota} allowance`) : "";
-      log(`  ${problem ? err.red("✗") : err.green("✓")} ${name} ${problem ? problem : err.dim("ready") + detail}`);
+      const install = problem?.match(/^(.*?);?\s*install it with: (.+)$/);
+      log(`  ${problem ? err.red("✗") : err.green("✓")} ${name} ${problem ? (install ? `${install[1]}. Install it with:` : problem) : err.dim("ready") + detail}`);
+      if (install) log(`              ${err.cyan(install[2])}`);
       if (!problem && quota === "Other Models") {
         log(err.yellow(`            This model uses Cursor's "Other Models" allowance. Cursor's own Grok (cursor-grok-*) uses the separate "Cursor Models" one.`));
       }
@@ -137,6 +150,23 @@ async function main() {
   }
 
   const outDir = resolve((values.out ?? config.out ?? "battles").replace(/^~(?=$|\/)/, homedir()));
+
+  if (positionals[0] === "share") {
+    const from = values.from ?? latestSaved(outDir);
+    if (!from) fail(`no battle to share in ${displayPath(outDir)}. Run one first, or pass --from <report>`);
+    const saved = loadSaved(from);
+    if (saved.incomplete) fail("that battle stopped before its verdict. Finish it with `battler continue`, then share it.");
+    const { createGist, shareMarkdown } = await import("./core/share.ts");
+    log(err.dim(`  Uploading "${saved.topic.slice(0, 60)}" as a secret GitHub Gist (unlisted; anyone with the link can read it)…`));
+    try {
+      const url = await createGist(shareMarkdown(savedToResult(saved)), `${battleSlug(saved.topic)}.md`, `battler: ${saved.topic.slice(0, 200)}`);
+      log(`  ${err.green("✓")} ${url}`);
+      process.stdout.write(`${url}\n`);
+    } catch (e) {
+      fail((e as Error).message);
+    }
+    return;
+  }
 
   if (positionals[0] === "serve") {
     await serve(outDir, config, { port: values.port, lan: Boolean(values.lan), open: !values["no-open"] });
@@ -164,7 +194,13 @@ async function main() {
         process.stderr.write("\n");
         question = await terminalPrompter.text("Follow-up question? (Enter to keep debating the same topic)");
       }
-      plan = await continuePlan(saved, from, question, { length: lengthFlag, rounds: roundsFlag, config, judge: values.judge });
+      plan = await continuePlan(saved, from, question, {
+        length: lengthFlag,
+        rounds: roundsFlag,
+        config,
+        judge: values.judge,
+        ...(values.compare ? { compare: true } : {}),
+      });
       chat = process.stdin.isTTY && process.stderr.isTTY && !values.json;
     } else {
       // Interactive when run bare in a terminal: ask for the topic (and length, unless it's set).
@@ -189,6 +225,7 @@ async function main() {
         rounds: roundsFlag ?? config.rounds ?? 2,
         agents: values.agents?.split(",") ?? config.agents,
         judge: values.judge,
+        compare: Boolean(values.compare),
         config,
       });
       chat = interactive && !values.json;
@@ -201,10 +238,12 @@ async function main() {
   for (;;) {
     const { jsonFile, saved } = await execute(plan, outDir, openIt, Boolean(values.json));
     if (!chat) break;
-    const question = await terminalPrompter.text("Follow-up question? (Enter to finish, \"more\" for another round)");
+    const question = await terminalPrompter.text(
+      saved.compare ? 'Follow-up question? (Enter to finish, "debate" to have them debate these answers)' : 'Follow-up question? (Enter to finish, "more" for another round)',
+    );
     if (!question) break;
     try {
-      plan = await continuePlan(saved, jsonFile, question.toLowerCase() === "more" ? "" : question, {
+      plan = await continuePlan(saved, jsonFile, ["more", "debate"].includes(question.toLowerCase()) ? "" : question, {
         length: lengthFlag,
         rounds: roundsFlag,
         config,
@@ -248,7 +287,7 @@ async function serve(outDir: string, config: Config, opts: { port?: string; lan:
   }
   log(err.dim(`  Battles are saved in ${displayPath(outDir)}. Press Ctrl+C to stop.`));
   log();
-  if (opts.open) spawn("open", [token ? `${local}?t=${token}` : local], { stdio: "ignore", detached: true }).on("error", () => {}).unref();
+  if (opts.open) openInBrowser(token ? `${local}?t=${token}` : local);
   // Stopping the server stops its battles (and so the AI CLIs they started).
   for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
     process.once(sig, () => {
@@ -301,9 +340,14 @@ async function execute(plan: Plan, outDir: string, openIt: boolean, json: boolea
       `Done in ${formatDuration(Date.now() - started)}`,
       `Report: ${displayPath(htmlFile)}`,
       openIt ? "Opening it in your browser." : "Add --open to view it in your browser.",
-      `Follow up: battler continue "your question"   ·   more rounds: battler continue`,
+      result.compare
+        ? (result.rounds.at(-1)?.length ?? 0) >= 2
+          ? `Follow up: battler continue "your question"   ·   have them debate it: battler continue`
+          : `Follow up: battler continue "your question"`
+        : `Follow up: battler continue "your question"   ·   more rounds: battler continue`,
+      "Share a link to it: battler share",
     );
-    if (openIt) spawn("open", [htmlFile], { stdio: "ignore", detached: true }).on("error", () => {}).unref();
+    if (openIt) openInBrowser(htmlFile);
   }
 
   if (json) {
@@ -313,7 +357,11 @@ async function execute(plan: Plan, outDir: string, openIt: boolean, json: boolea
       length: plan.length,
       ...(result.followUpOf ? { followUpOf: result.followUpOf } : {}),
       verdict,
-      ...(verdict ? {} : { verdictText: result.verdictText }),
+      ...(result.compare
+        ? { compare: true, answers: (result.rounds.at(-1) ?? []).map((t) => ({ name: t.agentName, text: t.text })) }
+        : verdict
+          ? {}
+          : { verdictText: result.verdictText }),
       transcript: mdFile,
       report: htmlFile,
       saved: jsonFile,

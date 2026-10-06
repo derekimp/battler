@@ -11,8 +11,39 @@ function bar(score: number, st: Style, color: number): string {
 
 const fmtScore = (n: number) => (Number.isInteger(n) ? `${n}.0` : n.toFixed(1)).padStart(4);
 
+/** Compare mode: each AI's answer in full, one after another. */
+function renderAnswers(result: BattleResult, st: Style, width: number): string {
+  const names = [...result.names.values()];
+  const paint = (lines: string[]) => inline(lines, st).map((l) => colorNames(l, names, st));
+  const out: string[] = [""];
+  for (const t of result.rounds.at(-1) ?? []) {
+    const color = debaterColor(t.agentName);
+    const title = ` ${st.fg(color, st.bold(t.agentName))} ${st.dim(`${Math.round(t.ms / 1000)}s`)} `;
+    out.push(`  ${st.fg(color, "──")}${title}${st.fg(color, "─".repeat(Math.max(2, width - 6 - visibleWidth(title))))}`, "");
+    for (const raw of revealNames(t.text, result.names).trim().split("\n")) {
+      const heading = raw.match(/^#{1,6}\s+(.*)$/);
+      if (heading) {
+        if (out.at(-1) !== "") out.push("");
+        out.push(`  ${st.bold(heading[1])}`);
+        continue;
+      }
+      if (!raw.trim()) {
+        if (out.at(-1) !== "") out.push("");
+        continue;
+      }
+      const bullet = raw.match(/^(\s*(?:[-*+]|\d+[.)])\s+)(.*)$/);
+      const lead = bullet ? bullet[1].replace(/^\s+/, "").replace(/^[-*+]/, "•") : "";
+      const pad = " ".repeat(visibleWidth(lead));
+      paint(wrap(bullet ? bullet[2] : raw.trim(), width - 4 - pad.length)).forEach((l, i) => out.push(`  ${i ? pad : lead}${l}`));
+    }
+    out.push("");
+  }
+  return out.join("\n");
+}
+
 /** Terminal rendering of the verdict. `width` is the full line width to fit in. */
 export function renderVerdict(result: BattleResult, st: Style, width: number): string {
+  if (result.compare) return renderAnswers(result, st, width);
   const names = [...result.names.values()];
   const paint = (lines: string[]) => inline(lines, st).map((l) => colorNames(l, names, st));
   const v = namedVerdict(result);

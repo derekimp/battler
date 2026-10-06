@@ -19,6 +19,16 @@ export const SITES = [
     match: "https://chatgpt.com/*",
   },
   {
+    // Gemini 3.1 Pro, in a temporary chat (turned on with its toggle; there's no URL for it).
+    id: "gemini",
+    name: "Gemini",
+    color: "#9b72f2",
+    home: "https://gemini.google.com/app",
+    newChat: "https://gemini.google.com/app",
+    match: "https://gemini.google.com/*",
+    model: "3.1 Pro",
+  },
+  {
     // Grok runs through Cursor's web agents, on the Cursor subscription. Grok 4.6 is Cursor's own
     // Grok, billed to the roomier "Cursor Models" allowance. There's no temporary-chat mode, so
     // each turn appears in your Cursor chat list.

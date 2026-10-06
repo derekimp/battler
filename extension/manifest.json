@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "battler",
-  "version": "0.1.0",
-  "description": "Make ChatGPT, Claude and Grok (via Cursor) debate each other in your own tabs, then judge each other blind.",
+  "version": "0.2.0",
+  "description": "Make ChatGPT, Claude, Gemini and Grok (via Cursor) debate each other in your own tabs, then judge each other blind.",
   "minimum_chrome_version": "116",
   "permissions": [
     "sidePanel",
@@ -14,6 +14,7 @@
   "host_permissions": [
     "https://chatgpt.com/*",
     "https://claude.ai/*",
+    "https://gemini.google.com/*",
     "https://cursor.com/*"
   ],
   "background": {
@@ -43,6 +44,7 @@
       "matches": [
         "https://chatgpt.com/*",
         "https://claude.ai/*",
+        "https://gemini.google.com/*",
         "https://cursor.com/*"
       ],
       "js": [

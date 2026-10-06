@@ -4,7 +4,9 @@
 set -eu
 cd "$(dirname "$0")/.."
 PATH="$PWD/test/fixtures/bin:$PATH"
-export PATH NO_COLOR=1
+# Never a real Antigravity CLI (it can sit next to node in ~/.local/bin).
+BATTLER_AGY=agy-not-installed-in-tests
+export PATH NO_COLOR=1 BATTLER_AGY
 out_dir=$(mktemp -d)
 json=$(node dist/cli.js --json -s -o "$out_dir" "Tabs or spaces?")
 echo "$json" | node -e '

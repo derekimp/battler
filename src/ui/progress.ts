@@ -43,13 +43,22 @@ export class Progress {
     const w = termWidth(this.out);
     const vs = opts.agents.map((n) => st.fg(debaterColor(n), st.bold(n))).join(st.dim(" vs "));
     this.print("");
-    for (const s of opts.skipped) this.print(`  ${/^Continuing/.test(s) ? st.cyan("↻") : st.yellow("!")} ${st.dim(s)}`);
+    for (const s of opts.skipped) {
+      const mark = /^Continuing/.test(s) ? st.cyan("↻") : /^Read the shared/.test(s) ? st.cyan("+") : st.yellow("!");
+      this.print(`  ${mark} ${st.dim(s)}`);
+    }
     this.print(`  ${vs}`);
     if (opts.followUpOf) {
       for (const line of wrap(`Follow-up to: ${opts.followUpOf}`, w - 4)) this.print(`  ${st.dim(line)}`);
     }
     for (const line of wrap(opts.topic.replace(/\*\*|`/g, ""), w - 4)) this.print(`  ${st.bold(line)}`);
-    this.print(st.dim(`  ${opts.length} · ${opts.rounds} round${opts.rounds > 1 ? "s" : ""} · judged by ${describeJudges(opts.judges)}`));
+    this.print(
+      st.dim(
+        opts.judges.length
+          ? `  ${opts.length} · ${opts.rounds} round${opts.rounds > 1 ? "s" : ""} · judged by ${describeJudges(opts.judges)}`
+          : `  ${opts.length} · compare: their answers side by side, no debate or judging`,
+      ),
+    );
     if (this.live) {
       this.out.write("\x1b[?25l"); // hide cursor while redrawing
       const restore = () => this.out.write("\x1b[?25h");

@@ -7,8 +7,12 @@ on:
 
 jobs:
   test:
-    name: Typecheck and test (macOS, Node 24)
-    runs-on: macos-latest
+    name: Typecheck and test (${{ matrix.os }}, Node 24)
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -22,6 +26,8 @@ jobs:
         run: npm run test:dist
       - name: Build and check the Chrome extension
         run: npm run test:extension
+      - name: The web app in Chrome
+        run: npm run test:web
 
   oldest-node:
     name: Built CLI on the oldest supported Node (22)
@@ -37,8 +43,12 @@ jobs:
         run: sh test/smoke.sh
 
   package:
-    name: Package contents
-    runs-on: macos-latest
+    name: Package contents (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -50,3 +60,7 @@ jobs:
           npm pack
           npm install -g ./battler-*.tgz
           PATH="$PWD/test/fixtures/bin:$PATH" battler --doctor
+      - name: Run it with npx, without installing
+        run: |
+          npm uninstall -g battler
+          PATH="$PWD/test/fixtures/bin:$PATH" npx --yes ./battler-*.tgz --doctor

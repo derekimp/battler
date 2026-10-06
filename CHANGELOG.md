@@ -1,18 +1,18 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 (2026-10-06)
 
-Hardening against failures:
+New:
 
-- A dropped connection, a 5xx or an overloaded service is retried once; a used-up plan, a missing CLI or a bad model isn't.
-- Rounds are saved as they finish. If judging fails, or the battle is stopped, `battler continue` (or the web app's "Judge the rounds so far") judges what's there, completing the same battle.
-- The output folder is checked before a battle starts, and a finished verdict is still shown if saving fails.
-- Hand-picked debaters and judges are checked before the battle; continuing a battle leaves out debaters that are no longer ready.
-- Judges can't add debaters that don't exist; sloppy labels ("debater a") are normalised.
-- When every AI fails because you're offline, battler says so.
-- Stopping battler (Ctrl+C, `kill`, closing the terminal) also stops the AI CLIs it started; so does stopping `battler serve`.
-- Piping into `head` etc. no longer crashes; very long topics are refused clearly; old Node versions get a clear message.
-- Chrome extension: a site's own notice (a usage limit, "something went wrong") is treated as a failure, not an answer; a lingering Stop button no longer stalls a reply; progress is saved each round and interrupted battles can be judged later.
+- **Compare mode** (`-c` / **Just compare**): each AI answers once, side by side, with no debate or judging. One message per AI. `battler continue` (or **Have them debate it**) turns a comparison into a full battle.
+- **Sharing:** the web app makes an image of a result to copy or download; `battler share` (or **Create a link**) uploads the report as a secret GitHub Gist with your own `gh` login.
+- **A clean slate:** debaters and judges are told to ignore anything they know about you (Claude Code adds your account email, Cursor your user rules), so answers aren't tailored to you or your past chats.
+- **Gemini runs through Antigravity CLI** (`agy`, Gemini 3.1 Pro by default). Google stopped serving Gemini CLI to personal Google accounts on 18 June 2026; battler now says so instead of counting Gemini as ready. Gemini CLI still works with a Gemini Code Assist licence.
+- **Shared ChatGPT links** in a question are read by battler and given to every AI, since the AIs can't browse.
+- Debaters answer in the language of the question.
+- `--doctor` puts install commands on their own line, ready to copy.
+- **Chrome extension:** Gemini (3.1 Pro, in a temporary chat); shared ChatGPT links are read; a rounds picker; tabs in a collapsed group; a leftover draft in a site's message box is cleared first (Cursor kept one, which went out glued to the next prompt); a tab Chrome left unrendered is shown for a moment so the site can act; a paused tab fails with a clear message instead of hanging.
+- **Linux** is supported and tested in CI. `npx battler "…"` runs it without installing.
 
 ## 0.1.0 (2026-09-30)
 
@@ -32,3 +32,15 @@ First public version.
 - Markdown and `--json` output for scripts.
 - Chinese, Japanese and Korean topics render correctly in the terminal (double-width characters, line breaks without spaces).
 - If Codex defaults to a model a ChatGPT login can't use, battler falls back to one it can.
+
+Hardening against failures:
+
+- A dropped connection, a 5xx or an overloaded service is retried once; a used-up plan, a missing CLI or a bad model isn't.
+- Rounds are saved as they finish. If judging fails, or the battle is stopped, `battler continue` (or the web app's "Judge the rounds so far") judges what's there, completing the same battle.
+- The output folder is checked before a battle starts, and a finished verdict is still shown if saving fails.
+- Hand-picked debaters and judges are checked before the battle; continuing a battle leaves out debaters that are no longer ready.
+- Judges can't add debaters that don't exist; sloppy labels ("debater a") are normalised.
+- When every AI fails because you're offline, battler says so.
+- Stopping battler (Ctrl+C, `kill`, closing the terminal) also stops the AI CLIs it started; so does stopping `battler serve`.
+- Piping into `head` etc. no longer crashes; very long topics are refused clearly; old Node versions get a clear message.
+- Chrome extension: a site's own notice (a usage limit, "something went wrong") is treated as a failure, not an answer; a lingering Stop button no longer stalls a reply; progress is saved each round and interrupted battles can be judged later.

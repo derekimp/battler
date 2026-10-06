@@ -30,6 +30,13 @@ const LENGTHS = [
   { value: "medium", title: "Standard", hint: "2–3 min · the full verdict" },
   { value: "long", title: "Deep", hint: "5+ min · every angle, in depth" },
 ];
+const ROUND_HINTS = {
+  1: "Just their first answers, then judged",
+  2: "One rebuttal each. Usually the best value",
+  3: "Two rebuttals. They tend to agree by now",
+  4: "Long; for hard, contested questions",
+  5: "The most there is",
+};
 const EXAMPLES = [
   "Is a hot dog a sandwich?",
   "Should I learn Python or JavaScript first?",
@@ -45,7 +52,7 @@ const PLACEHOLDERS = [
 const state = {
   status: null,
   battles: [],
-  draft: { topic: "", selected: null, length: null, rounds: null, judge: null, judgeTouched: false },
+  draft: { topic: "", selected: null, length: null, rounds: null, judge: null, judgeTouched: false, mode: "debate" },
   stream: null,
   timer: null,
 };
@@ -203,7 +210,7 @@ function renderNew() {
       <div class="composer-bar">
         <span class="cost" id="cost"></span>
         <span class="grow"></span>
-        <button class="btn primary" id="start" type="submit">Start battle <span class="kbd">⌘↵</span></button>
+        <button class="btn primary" id="start" type="submit"><span id="start-label">${d.mode === "compare" ? "Compare answers" : "Start battle"}</span> <span class="kbd">⌘↵</span></button>
       </div>
     </form>
     <div class="examples" aria-label="Examples">
@@ -211,6 +218,13 @@ function renderNew() {
     </div>
 
     <section class="options" aria-label="Battle options">
+      <div>
+        <div class="opt-label">Mode</div>
+        <div class="segmented two" role="radiogroup" aria-label="Mode" id="modes">
+          <button type="button" role="radio" data-mode="debate" aria-checked="${d.mode === "debate"}"><strong>Debate</strong><span>They argue, then judge each other blind</span></button>
+          <button type="button" role="radio" data-mode="compare" aria-checked="${d.mode === "compare"}"><strong>Just compare</strong><span>Each answers once, side by side. Fastest</span></button>
+        </div>
+      </div>
       <div>
         <div class="opt-label">Debaters <small>· tap to include or leave out</small></div>
         <div class="debaters" id="debaters">
@@ -231,14 +245,16 @@ function renderNew() {
           ).join("")}
         </div>
       </div>
-      <details class="more">
+      <div id="rounds-row" class="rounds-row" ${d.mode === "compare" ? "hidden" : ""}>
+        <div class="opt-label">Rounds <small>· including the opening</small></div>
+        <div class="rounds-line">
+          <div class="stepper"><button type="button" data-step="-1" aria-label="Fewer rounds">−</button><output id="rounds">${d.rounds}</output><button type="button" data-step="1" aria-label="More rounds">+</button></div>
+          <span class="muted" id="rounds-hint"></span>
+        </div>
+      </div>
+      <details class="more" id="more-options" ${d.mode === "compare" ? "hidden" : ""}>
         <summary>More options</summary>
         <div class="more-grid">
-          <div>
-            <div class="opt-label">Rounds <small>· including the opening</small></div>
-            <div class="stepper"><button type="button" data-step="-1" aria-label="Fewer rounds">−</button><output id="rounds">${d.rounds}</output><button type="button" data-step="1" aria-label="More rounds">+</button></div>
-            <p class="muted" style="font-size:13px;margin:8px 0 0">2–3 is usually best. They tend to agree by round 3.</p>
-          </div>
           <div>
             <div class="opt-label">Judging</div>
             <label class="radio"><input type="radio" name="judge" value="panel" ${d.judge === "panel" ? "checked" : ""}><span>Panel <small>Every AI scores the others; nobody scores itself. Fairest.</small></span></label>
@@ -289,6 +305,15 @@ function renderNew() {
     b.setAttribute("aria-pressed", String(d.selected.has(b.dataset.id)));
     updateCost();
   });
+  $("#modes").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-mode]");
+    if (!b) return;
+    d.mode = b.dataset.mode;
+    view.querySelectorAll("[data-mode]").forEach((x) => x.setAttribute("aria-checked", String(x === b)));
+    $("#more-options").hidden = $("#rounds-row").hidden = d.mode === "compare";
+    $("#start-label").textContent = d.mode === "compare" ? "Compare answers" : "Start battle";
+    updateCost();
+  });
   $("#lengths").addEventListener("click", (e) => {
     const b = e.target.closest("[data-length]");
     if (!b) return;
@@ -324,8 +349,9 @@ function renderNew() {
   });
 
   function updateCost() {
+    $("#rounds-hint").textContent = ROUND_HINTS[d.rounds] ?? "";
     const n = d.selected.size;
-    const calls = n * d.rounds + (d.judge === "panel" ? n : 1);
+    const calls = d.mode === "compare" ? n : n * d.rounds + (d.judge === "panel" ? n : 1);
     $("#cost").textContent = n < 2 ? "Pick at least 2 debaters" : `About ${calls} AI calls on your plans`;
     $("#start").disabled = n < 2 || !d.topic.trim() || (status && !status.canBattle);
   }
@@ -349,6 +375,7 @@ function renderNew() {
           // Everyone usable selected: let the server pick the lineup (it knows about stand-ins).
           agents: allUsable ? undefined : specs,
           judge: d.judge === "panel" ? "panel" : lead.via ? specs[0] : lead.id,
+          compare: d.mode === "compare",
         },
       });
       d.topic = "";
@@ -356,7 +383,7 @@ function renderNew() {
     } catch (err) {
       toast(err.message);
       $("#start").disabled = false;
-      $("#start").innerHTML = 'Start battle <span class="kbd">⌘↵</span>';
+      $("#start").innerHTML = `<span id="start-label">${d.mode === "compare" ? "Compare answers" : "Start battle"}</span> <span class="kbd">⌘↵</span>`;
     }
   }
 }
@@ -375,11 +402,17 @@ const fmtSecs = (ms) => {
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`;
 };
 
-function headHtml({ topic, followUpOf, debaters, meta, back = true }) {
+function headHtml({ topic, followUpOf, debaters, meta, attachments = [], back = true }) {
   return `<header class="battle-head">
     ${back ? '<a class="back" href="#/">← New battle</a>' : ""}
     ${followUpOf ? `<p class="muted followup">↳ Follow-up to: ${esc(followUpOf)}</p>` : ""}
     <h1>${esc(topic)}</h1>
+    ${attachments
+      .map(
+        (a) =>
+          `<p class="attached">📎 They read your shared ChatGPT chat <a href="${esc(a.url)}" target="_blank" rel="noopener">“${esc(a.title)}”</a> <span class="muted">· ${a.messages} messages</span></p>`,
+      )
+      .join("")}
     <div class="meta">${debaters.map((x) => `<span class="chip" style="--c:${x.color}">${esc(x.name)}</span>`).join("")}<span class="muted">${esc(meta)}</span></div>
   </header>`;
 }
@@ -415,15 +448,15 @@ function renderLive(jobId) {
         const judged = e.judges.length > 1 ? `judged by a panel of ${e.judges.length}` : `judged by ${e.judges[0]}`;
         const lengthName = LENGTHS.find((l) => l.value === e.length)?.title ?? e.length;
         const steps = [];
-        for (let r = e.firstRound; r <= e.totalRounds; r++) steps.push([`r${r}`, r === 1 ? "Opening" : `Round ${r}`]);
-        steps.push(["verdict", "Verdict"]);
+        for (let r = e.firstRound; r <= e.totalRounds; r++) steps.push([`r${r}`, e.compare ? "Answers" : r === 1 ? "Opening" : `Round ${r}`]);
+        if (!e.compare) steps.push(["verdict", "Verdict"]);
         view.innerHTML = `
-          ${headHtml({ topic: e.topic, followUpOf: e.followUpOf, debaters: e.debaters, meta: `${lengthName} · ${e.totalRounds} round${e.totalRounds > 1 ? "s" : ""} · ${judged}` })}
+          ${headHtml({ topic: e.topic, followUpOf: e.followUpOf, debaters: e.debaters, attachments: e.attachments, meta: e.compare ? `${lengthName} · side by side, no judging` : `${lengthName} · ${e.totalRounds} round${e.totalRounds > 1 ? "s" : ""} · ${judged}` })}
           ${e.notes.length ? `<div class="notes">${e.notes.map((n) => `<p class="${/allowance|Skipping|isn't ready/.test(n) ? "warn" : ""}">${esc(n)}</p>`).join("")}</div>` : ""}
           <ol class="timeline" aria-label="Progress">${steps.map(([k, label], i) => `<li data-step="${k}"><span class="num">${i + 1}</span>${label}</li>`).join("")}</ol>
           <div id="verdict-slot"></div>
           <div id="rounds"></div>
-          <p style="margin-top:28px"><button class="btn danger" id="cancel">Stop this battle</button></p>`;
+          <p style="margin-top:28px"><button class="btn danger" id="cancel">${e.compare ? "Stop" : "Stop this battle"}</button></p>`;
         $("#cancel").addEventListener("click", async () => {
           $("#cancel").disabled = true;
           await api(`/api/jobs/${jobId}/cancel`, { method: "POST" }).catch(() => {});
@@ -435,7 +468,7 @@ function renderLive(jobId) {
         const sec = document.createElement("section");
         sec.className = "round-live fade-in";
         sec.id = `round-${e.round}`;
-        sec.innerHTML = `<h2>${e.round === 1 ? "Round 1 · Opening statements" : `Round ${e.round} · Rebuttals and revisions`}</h2>
+        sec.innerHTML = `<h2>${plan?.compare ? "Their answers" : e.round === 1 ? "Round 1 · Opening statements" : `Round ${e.round} · Rebuttals and revisions`}</h2>
           <div class="turns">${e.agents
             .map((name) => {
               pending.set(`${e.round}:${name}`, e.at);
@@ -514,6 +547,18 @@ function renderLive(jobId) {
         $("#cancel")?.parentElement.remove();
         $("#verdict-slot").innerHTML = `<div class="fade-in">${e.battle.verdictHtml}</div>`;
         const rounds = $("#rounds");
+        if (e.battle.compare) {
+          // The answers are the result; the cards above already show them in full.
+          rounds.remove();
+          if (canDebate(e.battle)) {
+            $("#verdict-slot").insertAdjacentHTML("beforeend", debateItHtml());
+            $("#debate-it").addEventListener("click", () => finishBattle(e.battle.id));
+          }
+          history.replaceState(null, "", `#/b/${encodeURIComponent(e.battle.id)}`);
+          followBar(e.battle);
+          loadHistory();
+          break;
+        }
         rounds.insertAdjacentHTML("beforebegin", '<h2 style="margin-top:36px">Transcript</h2>');
         // Oldest round first once it's all in.
         [...rounds.children].reverse().forEach((c) => rounds.append(c));
@@ -564,21 +609,38 @@ async function renderSaved(id) {
   }
   const lengthName = LENGTHS.find((l) => l.value === b.length)?.title ?? b.length;
   const judged = b.judges.length > 1 ? `judged by a panel of ${b.judges.length}` : `judged by ${b.judges[0]}`;
-  const verdictPart = b.incomplete
+  const verdictPart = b.compare
+    ? `<div class="fade-in">${b.verdictHtml}</div>${canDebate(b) ? debateItHtml() : ""}`
+    : b.incomplete
     ? `<section class="card error-card fade-in"><h2>This battle stopped before the verdict</h2>
         <p class="muted">Its ${b.rounds} round${b.rounds === 1 ? " is" : "s are"} saved below. The judges can score them now.</p>
         <p style="margin-top:12px"><button class="btn primary" id="finish">Judge it now</button></p></section>`
     : `<div class="fade-in">${b.verdictHtml}</div>`;
+  const meta = b.compare
+    ? `${lengthName} · side by side, no judging · ${timeAgo(b.createdAt)}`
+    : `${lengthName} · ${b.rounds} round${b.rounds > 1 ? "s" : ""}${b.incomplete ? "" : ` · ${judged}`} · ${timeAgo(b.createdAt)}`;
   view.innerHTML = `
-    ${headHtml({ topic: b.topic, followUpOf: b.followUpOf, debaters: b.debaters, meta: `${lengthName} · ${b.rounds} round${b.rounds > 1 ? "s" : ""}${b.incomplete ? "" : ` · ${judged}`} · ${timeAgo(b.createdAt)}` })}
+    ${headHtml({ topic: b.topic, followUpOf: b.followUpOf, debaters: b.debaters, attachments: b.attachments, meta })}
     ${verdictPart}
-    <section class="transcript"><h2>Transcript</h2>${b.roundsHtml}</section>`;
+    ${b.compare ? "" : `<section class="transcript"><h2>Transcript</h2>${b.roundsHtml}</section>`}`;
   $("#finish")?.addEventListener("click", () => finishBattle(b.id));
+  $("#debate-it")?.addEventListener("click", () => finishBattle(b.id));
   followBar(b);
   renderHistory();
 }
 
-/** Judge a battle that stopped before its verdict (no new rounds). */
+/** A comparison can be debated only if at least two AIs answered. */
+const canDebate = (battle) => (battle.card?.positions.length ?? 0) >= 2;
+
+/** Under a comparison: have them debate these answers, which makes it a full battle. */
+function debateItHtml() {
+  return `<section class="card debate-it fade-in">
+    <div><strong>Want a verdict?</strong> <span class="muted">They read each other's answers, push back, then judge each other blind.</span></div>
+    <button class="btn primary" id="debate-it">Have them debate it</button>
+  </section>`;
+}
+
+/** Judge a battle that stopped before its verdict (no new rounds), or debate a comparison. */
 async function finishBattle(id) {
   try {
     const { jobId } = await api("/api/battles", { method: "POST", body: { continueFrom: id, more: true } });
@@ -588,15 +650,257 @@ async function finishBattle(id) {
   }
 }
 
+
+/* ── Share ─────────────────────────────────────────────── */
+const CARD_FONT = '-apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Helvetica Neue", "Segoe UI", sans-serif';
+const WIDE_CHAR = /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]/u;
+
+/** Lines of `text` that fit `width` on the canvas; CJK can break between any two characters. */
+function canvasLines(ctx, text, width, maxLines) {
+  const tokens = String(text).match(/\s+|[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]|[^\sᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]+/gu) ?? [];
+  const lines = [];
+  let line = "";
+  for (const tok of tokens) {
+    if (/^\s+$/.test(tok)) {
+      if (line) line += " ";
+      continue;
+    }
+    if (ctx.measureText(line + tok).width <= width) {
+      line += tok;
+      continue;
+    }
+    if (line.trim()) lines.push(line.trimEnd());
+    line = tok;
+    // A single word wider than the line: cut it.
+    while (ctx.measureText(line).width > width) {
+      let i = line.length - 1;
+      while (i > 1 && ctx.measureText(line.slice(0, i)).width > width) i--;
+      lines.push(line.slice(0, i));
+      line = line.slice(i);
+    }
+  }
+  if (line.trim()) lines.push(line.trimEnd());
+  if (lines.length <= maxLines) return lines;
+  const kept = lines.slice(0, maxLines);
+  let last = kept[maxLines - 1];
+  while (last && ctx.measureText(`${last}…`).width > width) last = last.slice(0, -1);
+  kept[maxLines - 1] = `${last.replace(/[\s,.;:，。、；：]+$/u, "")}…`;
+  return kept;
+}
+
+/** A 1200×675 image of the result, for posting anywhere. Drawn at 2× for sharp text. */
+function drawShareCard(card, colorOf) {
+  const W = 1200;
+  const H = 675;
+  const canvas = document.createElement("canvas");
+  canvas.width = W * 2;
+  canvas.height = H * 2;
+  const ctx = canvas.getContext("2d");
+  ctx.scale(2, 2);
+  const ink = "#1d1d1f";
+  const muted = "#6e6e73";
+  const font = (size, weight = 400) => (ctx.font = `${weight} ${size}px ${CARD_FONT}`);
+  const text = (s, x, y, color = ink) => {
+    ctx.fillStyle = color;
+    ctx.fillText(s, x, y);
+  };
+  const dot = (x, y, r, color) => {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  };
+  const P = 64;
+  ctx.fillStyle = "#f6f5f2";
+  ctx.fillRect(0, 0, W, H);
+  ctx.textBaseline = "alphabetic";
+
+  // Brand
+  ctx.fillStyle = ink;
+  ctx.beginPath();
+  ctx.roundRect(P, 44, 30, 30, 9);
+  ctx.fill();
+  dot(P + 10, 59, 5.5, "#d97757");
+  dot(P + 20, 59, 5.5, "#5b8def");
+  font(22, 700);
+  text("battler", P + 42, 67);
+  font(18, 500);
+  const mode = card.compare ? "Same question, side by side" : "AI debate · judged blind";
+  text(mode, W - P - ctx.measureText(mode).width, 66, muted);
+
+  // Topic
+  let y = 128;
+  if (card.followUpOf) {
+    font(18);
+    text(`↳ Follow-up to: ${canvasLines(ctx, card.followUpOf, W - 2 * P - 160, 1)[0]}`, P, y, muted);
+    y += 34;
+  }
+  font(44, 700);
+  for (const l of canvasLines(ctx, card.topic, W - 2 * P, 2)) {
+    text(l, P, y + 30);
+    y += 54;
+  }
+  y += 20;
+  const footerY = H - 44;
+
+  if (!card.compare && card.answer) {
+    // Winner, answer, scores: one block, centred in the space left.
+    const scoresMax = footerY - 64;
+    font(25);
+    const answerLines = canvasLines(ctx, card.answer, W - 2 * P, Math.max(1, Math.floor((scoresMax - 24 - (y + 62)) / 37)));
+    const block = 62 + answerLines.length * 37 + 26 + 44;
+    y += Math.max(0, (footerY - 30 - y - block) / 2);
+    font(28, 700);
+    const head = card.headline ?? "";
+    const name = card.winner ?? "";
+    let x = P;
+    dot(x + 9, y + 14, 9, name ? colorOf(name) : muted);
+    x += 30;
+    if (name && head.startsWith(name)) {
+      text(name, x, y + 24, colorOf(name));
+      x += ctx.measureText(name).width;
+      text(head.slice(name.length).replace(/\s*\(.*\)$/, ""), x, y + 24);
+    } else text(head.replace(/\s*\(.*\)$/, ""), x, y + 24);
+    y += 62;
+    font(25);
+    for (const l of answerLines) {
+      text(l, P, y + 22, "#333336");
+      y += 37;
+    }
+    // Scores, right under the answer
+    const chipsY = Math.min(scoresMax, y + 26);
+    let sx = P;
+    for (const s of card.scores) {
+      font(21, 700);
+      const label = s.name;
+      const score = s.score.toFixed(1);
+      const w = 22 + ctx.measureText(label).width + 12;
+      font(21, 400);
+      const total = w + ctx.measureText(score).width + 20;
+      ctx.fillStyle = "#fff";
+      ctx.strokeStyle = "#e4e2dc";
+      ctx.beginPath();
+      ctx.roundRect(sx, chipsY, total, 44, 22);
+      ctx.fill();
+      ctx.stroke();
+      dot(sx + 20, chipsY + 22, 6, colorOf(s.name));
+      font(21, 700);
+      text(label, sx + 34, chipsY + 29, colorOf(s.name));
+      font(21, 400);
+      text(score, sx + w + 10, chipsY + 29, muted);
+      sx += total + 12;
+    }
+  } else {
+    // Columns: each AI's position
+    const cols = card.positions.slice(0, 4);
+    const gap = 20;
+    const colW = (W - 2 * P - gap * (cols.length - 1)) / cols.length;
+    const maxBottom = footerY - 36;
+    const small = cols.length > 3;
+    const lineH = small ? 27 : 30;
+    const room = Math.max(1, Math.floor((maxBottom - y - 76) / lineH));
+    font(small ? 18 : 20);
+    const wrapped = cols.map((c) => canvasLines(ctx, c.text, colW - 44, room));
+    // As tall as the longest answer needs, no taller, and centred in the space left.
+    const height = Math.min(maxBottom - y, 84 + Math.max(...wrapped.map((w) => w.length)) * lineH + 10);
+    const top = y + Math.max(0, (maxBottom - y - height) / 2);
+    const bottom = top + height;
+    cols.forEach((c, i) => {
+      const x = P + i * (colW + gap);
+      ctx.fillStyle = "#fff";
+      ctx.strokeStyle = "#e4e2dc";
+      ctx.beginPath();
+      ctx.roundRect(x, top, colW, bottom - top, 16);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = colorOf(c.name);
+      ctx.fillRect(x + 16, top, colW - 32, 4);
+      font(23, 700);
+      text(c.name, x + 22, top + 46, colorOf(c.name));
+      font(small ? 18 : 20);
+      wrapped[i].forEach((l, j) => text(l, x + 22, top + 84 + j * lineH, "#333336"));
+    });
+  }
+
+  // Footer
+  font(18, 500);
+  const who = card.scores.length ? card.scores.map((s) => s.name) : card.positions.map((p) => p.name);
+  text(card.compare ? `${who.join(" · ")} · no API keys` : `${who.join(" vs ")} · on their own subscriptions`, P, footerY, muted);
+  const url = "github.com/derekimp/battler";
+  font(18, 600);
+  text(url, W - P - ctx.measureText(url).width, footerY, ink);
+  return canvas;
+}
+
+function openShare(battle) {
+  if (!battle.card) return toast("Finish the battle first, then share it.");
+  const colorOf = (name) => battle.debaters.find((d) => d.name === name)?.color ?? "#8a8f98";
+  const canvas = drawShareCard(battle.card, colorOf);
+  const blob = new Promise((r) => canvas.toBlob(r, "image/png"));
+  const dlg = document.createElement("dialog");
+  dlg.className = "share-dialog";
+  dlg.innerHTML = `
+    <form method="dialog" class="share-head"><h2>Share this ${battle.compare ? "comparison" : "battle"}</h2><button class="icon-btn" aria-label="Close">✕</button></form>
+    <img alt="Share image: ${esc(battle.topic)}" src="${canvas.toDataURL("image/png")}">
+    <div class="share-actions">
+      <button class="btn primary" id="share-copy">Copy image</button>
+      <button class="btn" id="share-download">Download image</button>
+      <button class="btn" id="share-link" title="Uploads the full report as a secret GitHub Gist on your account">Create a link</button>
+    </div>
+    <p class="muted share-note" id="share-note">Paste the image into X, Reddit, Slack… The link option puts the full report in a secret GitHub Gist: unlisted, but anyone with the link can read it.</p>`;
+  document.body.append(dlg);
+  dlg.addEventListener("close", () => dlg.remove());
+  dlg.showModal();
+  const note = $("#share-note", dlg);
+  $("#share-copy", dlg).addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      note.textContent = "Copied. Paste it wherever you're posting.";
+    } catch {
+      note.textContent = "Your browser didn't allow copying an image here. Use Download instead.";
+    }
+  });
+  $("#share-download", dlg).addEventListener("click", async () => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(await blob);
+    a.download = `battler-${battle.id}.png`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  });
+  $("#share-link", dlg).addEventListener("click", async (e) => {
+    const b = e.currentTarget;
+    b.disabled = true;
+    b.textContent = "Creating…";
+    try {
+      const { url } = await api(`/api/battles/${encodeURIComponent(battle.id)}/share`, { method: "POST" });
+      // Not available over plain http (--lan); the link is shown either way.
+      await navigator.clipboard?.writeText(url).catch(() => {});
+      note.innerHTML = `Link copied: <a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a>`;
+      b.textContent = "Link created";
+    } catch (err) {
+      note.textContent = err.message;
+      b.disabled = false;
+      b.textContent = "Create a link";
+    }
+  });
+}
+
 /* ── Follow-up bar ─────────────────────────────────────── */
 function followBar(battle) {
   $(".followbar")?.remove();
   const bar = document.createElement("div");
   bar.className = "followbar";
   bar.innerHTML = `<form class="followbar-inner">
-      <input id="follow" placeholder="Ask a follow-up… they'll build on this debate" maxlength="2000" autocomplete="off">
+      <input id="follow" placeholder="${battle.compare ? "Ask a follow-up… they'll keep these answers in mind" : "Ask a follow-up… they'll build on this debate"}" maxlength="2000" autocomplete="off">
       <button class="btn primary" type="submit">Ask</button>
-      <button class="btn" type="button" id="more" title="Another round on the same question">+1 <span class="label-long">round</span></button>
+      ${
+        battle.compare
+          ? canDebate(battle)
+            ? '<button class="btn" type="button" id="more" title="They debate these answers, then judge">Debate <span class="label-long">it</span></button>'
+            : ""
+          : '<button class="btn" type="button" id="more" title="Another round on the same question">+1 <span class="label-long">round</span></button>'
+      }
+      ${battle.card ? '<button class="btn" type="button" id="share" title="An image or a link to post anywhere">Share</button>' : ""}
       <a class="btn" href="${battle.reportUrl}${token ? `?t=${encodeURIComponent(token)}` : ""}" target="_blank" rel="noopener" title="Open the full report">↗ <span class="label-long">Report</span></a>
     </form>`;
   document.body.append(bar);
@@ -616,7 +920,8 @@ function followBar(battle) {
     if (q) go({ question: q });
     else $("#follow", bar).focus();
   });
-  $("#more", bar).addEventListener("click", () => go({ more: true }));
+  $("#more", bar)?.addEventListener("click", () => go({ more: true }));
+  $("#share", bar)?.addEventListener("click", () => openShare(battle));
 }
 
 /* ── Routing ───────────────────────────────────────────── */

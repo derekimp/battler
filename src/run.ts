@@ -61,12 +61,22 @@ export async function runPlan(
   const jsonFile = join(opts.outDir, `${id}.json`);
   let savedRounds = 0;
 
-  // Save the rounds as they finish, so a failure later (or Ctrl+C) doesn't lose them.
+  // Save the rounds as they finish, so a failure later (or Ctrl+C) doesn't lose them. Not for a
+  // comparison (one round, nothing to resume), nor while debating one: the comparison stays as it
+  // was until the debate has its verdict.
+  const saveRounds = !plan.compare && !plan.fromCompare;
   const onEvent = (e: BattleEvent) => {
-    if (e.type === "round-done") {
+    if (e.type === "round-done" && saveRounds) {
       try {
         const partial = toIncomplete(
-          { topic: plan.topic, length: plan.length, rounds: e.history, labels: e.labels, followUpOf: plan.followUp?.topic ?? plan.followUpOf },
+          {
+            topic: plan.topic,
+            length: plan.length,
+            rounds: e.history,
+            labels: e.labels,
+            followUpOf: plan.followUp?.topic ?? plan.followUpOf,
+            attachments: plan.attachments,
+          },
           plan.agents,
           now,
         );
@@ -90,13 +100,19 @@ export async function runPlan(
       labels: plan.labels,
       resume: plan.resume,
       followUp: plan.followUp,
+      attachments: plan.attachments,
       signal: opts.signal,
       onEvent,
       retryDelayMs: opts.retryDelayMs,
     });
   } catch (e) {
-    const hint = savedRounds ? `\nThe ${savedRounds} round${savedRounds === 1 ? "" : "s"} so far are saved; \`battler continue\` will have them judged.` : "";
-    throw new BattleError(`${message(e)}${hint}`, savedRounds ? id : undefined, savedRounds ? jsonFile : undefined);
+    // A comparison is a single round, so there's nothing earlier to pick up.
+    const hint =
+      savedRounds && !plan.compare
+        ? `\n${savedRounds === 1 ? "The first round is" : `The ${savedRounds} rounds so far are`} saved; \`battler continue\` will have them judged.`
+        : "";
+    const resumable = savedRounds && !plan.compare;
+    throw new BattleError(`${message(e)}${hint}`, resumable ? id : undefined, resumable ? jsonFile : undefined);
   }
   if (plan.followUpOf && !result.followUpOf) result.followUpOf = plan.followUpOf;
 

@@ -73,7 +73,7 @@ test("check() reports ready, logged out, and not installed", async () => {
   assert.match((await cursorGrokAgent().check())!, /cursor-agent login/);
 
   process.env.PATH = "/usr/bin:/bin";
-  assert.match((await codexAgent().check())!, /not found on PATH; install Codex CLI/);
+  assert.match((await codexAgent().check())!, /not found on PATH; install it with: npm install -g @openai\/codex/);
 });
 
 test("CLI failures become errors with a useful hint", async () => {
@@ -176,11 +176,47 @@ test("Gemini: answers in plan (read-only) mode, never sees API keys, and checks 
   process.env.BATTLER_GEMINI_HOME = home;
   assert.match((await geminiAgent().check())!, /not logged in; run `gemini` once and choose Login with Google/);
   writeFileSync(join(home, "oauth_creds.json"), "{}");
+  // A personal Google account isn't served any more; a Code Assist licence (a Cloud project) is.
+  assert.match((await geminiAgent().check())!, /stopped serving Gemini CLI to personal Google accounts/);
+  process.env.GOOGLE_CLOUD_PROJECT = "my-project";
   assert.equal(await geminiAgent().check(), null);
+  delete process.env.GOOGLE_CLOUD_PROJECT;
   mkdirSync(home, { recursive: true });
   writeFileSync(join(home, "settings.json"), JSON.stringify({ security: { auth: { selectedType: "gemini-api-key" } } }));
   assert.match((await geminiAgent().check())!, /signed in with gemini-api-key, not a Google account/);
 
   process.env.PATH = `${FAKE_BIN}:/usr/bin:/bin`;
-  assert.match((await geminiAgent().check())!, /not found on PATH; install Gemini CLI: npm install -g @google\/gemini-cli/);
+  assert.match((await geminiAgent().check())!, /Antigravity CLI \(`agy`\) not found on PATH; optional; install it with: curl -fsSL https:\/\/antigravity\.google\/cli\/install\.sh \| bash/);
+});
+
+test("Gemini through Antigravity CLI: print mode, Gemini Pro by default, no tools, and a sign-in check", async () => {
+  const { geminiAgent, resetGeminiBackend, DEFAULT_AGY_MODEL } = await import("../src/adapters/cli-agents.ts");
+  const log = join(mkdtempSync(join(tmpdir(), "agy-")), "calls.jsonl");
+  process.env.FAKE_LOG = log;
+  process.env.BATTLER_AGY = join(FAKE_BIN.replace(/bin$/, "bin-agy"), "agy");
+  process.env.ANTIGRAVITY_API_KEY = "test-key";
+  resetGeminiBackend();
+  try {
+    assert.match(await geminiAgent().ask("hi"), new RegExp(`agy\\[${DEFAULT_AGY_MODEL}\\] opening`));
+    assert.doesNotMatch(await geminiAgent().ask("hi"), /LEAKED/);
+    const call = readFileSync(log, "utf8").trim().split("\n").map((l) => JSON.parse(l)).find((c) => c.cli === "agy" && c.args[0] === "-p")!;
+    assert.deepEqual(call.args.slice(2), ["--output-format", "json", "--disable-slash-commands", "--model", DEFAULT_AGY_MODEL]);
+    assert.ok(!call.args.includes("--dangerously-skip-permissions"), "tools stay refused");
+    assert.match(await geminiAgent("gemini-3.8-flash-high").ask("hi"), /agy\[gemini-3\.8-flash-high\]/);
+
+    assert.equal(await geminiAgent().check(), null);
+    assert.match((await geminiAgent("gemini-9-ultra").check())!, /isn't in Antigravity's list/);
+    process.env.FAKE_AGY_SIGNED_OUT = "1";
+    assert.match((await geminiAgent().check())!, /not signed in; run `agy` once/);
+    delete process.env.FAKE_AGY_SIGNED_OUT;
+
+    process.env.FAKE_AGY_TOOL = "1";
+    await assert.rejects(geminiAgent().ask("hi"), /tried to use a tool \(RunCommand\) instead of answering/);
+    delete process.env.FAKE_AGY_TOOL;
+  } finally {
+    process.env.BATTLER_AGY = "agy-not-installed-in-tests";
+    delete process.env.FAKE_LOG;
+    delete process.env.ANTIGRAVITY_API_KEY;
+    resetGeminiBackend();
+  }
 });

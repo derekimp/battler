@@ -1,6 +1,7 @@
 // battler side panel: set up a battle, run it with the shared engine against your own tabs
 // (or copy & paste), and show progress, the verdict and history.
 import { runBattle } from "./lib/core/battle.js";
+import { attachmentFrom, fetchSharedChat, findShareLinks } from "./lib/core/links.js";
 import { finalPositions, savedAnswer, savedToResult, toIncomplete, toSaved } from "./lib/core/saved-core.js";
 import { namedVerdict } from "./lib/core/verdict.js";
 import { htmlColor, renderRoundsHtml, renderTurnHtml, renderVerdictHtml } from "./lib/ui/html-report.js";
@@ -19,7 +20,12 @@ const LENGTHS = [
 const EXAMPLES = ["Is a hot dog a sandwich?", "Python or JavaScript first?", "Rent or buy a home in 2026?"];
 const HISTORY_LIMIT = 50;
 
-const prefs = { selected: new Set(SITES.map((s) => s.id)), mode: "auto", length: "medium", topic: "" };
+const prefs = { selected: new Set(SITES.map((s) => s.id)), mode: "auto", length: "medium", rounds: 2, topic: "" };
+const ROUNDS = [
+  { value: 1, title: "1 round", hint: "answers only, then judged" },
+  { value: 2, title: "2 rounds", hint: "one rebuttal (best value)" },
+  { value: 3, title: "3 rounds", hint: "two rebuttals, in depth" },
+];
 let statuses = {};
 let running = null; // { controller }
 
@@ -29,7 +35,7 @@ async function loadPrefs() {
   if (p) Object.assign(prefs, p, { selected: new Set(p.selected ?? SITES.map((s) => s.id)) });
 }
 const savePrefs = () =>
-  chrome.storage.local.set({ prefs: { selected: [...prefs.selected], mode: prefs.mode, length: prefs.length } });
+  chrome.storage.local.set({ prefs: { selected: [...prefs.selected], mode: prefs.mode, length: prefs.length, rounds: prefs.rounds } });
 
 async function history() {
   const { battles = [] } = await chrome.storage.local.get("battles");
@@ -111,7 +117,7 @@ function renderNew() {
       </div>
       <p class="help">${
         prefs.mode === "auto"
-          ? "battler opens its own tabs (grouped as “battler”) and uses temporary chats, so your history stays clean. If a site changes and automatic stops working, switch to copy &amp; paste."
+          ? "battler works in its own background tabs, tucked into a collapsed “battler” group, and uses temporary chats, so your history stays clean. If a site changes and automatic stops working, switch to copy &amp; paste."
           : "battler shows each message to send; you paste it into the site and paste the reply back. Slower, but works even when a site changes."
       }</p>
     </div>
@@ -124,7 +130,14 @@ function renderNew() {
     </div>
 
     <div class="section">
-      <button class="btn primary block" id="start">Start battle</button>
+      <div class="label">Rounds</div>
+      <div class="seg" role="radiogroup" id="rounds-pick">${ROUNDS.map(
+        (r) => `<button type="button" role="radio" data-rounds="${r.value}" aria-checked="${prefs.rounds === r.value}"><b>${r.title}</b>${r.hint}</button>`,
+      ).join("")}</div>
+    </div>
+
+    <div class="startbar">
+      <button class="btn primary block" id="start">Start battle <span class="kbd">⌘↵</span></button>
       <p class="fine" id="cost"></p>
     </div>`;
 
@@ -173,12 +186,19 @@ function renderNew() {
     savePrefs();
     update();
   });
+  $("#rounds-pick").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-rounds]");
+    if (!b) return;
+    prefs.rounds = Number(b.dataset.rounds);
+    view.querySelectorAll("[data-rounds]").forEach((x) => x.setAttribute("aria-checked", String(x === b)));
+    savePrefs();
+    update();
+  });
   $("#start").addEventListener("click", start);
 
   function update() {
     const n = prefs.selected.size;
-    const rounds = 2;
-    const calls = n * rounds + (prefs.length === "short" ? 1 : n);
+    const calls = n * prefs.rounds + (prefs.length === "short" ? 1 : n);
     $("#cost").textContent =
       n < 2 ? "Pick at least 2 debaters." : `About ${calls} messages across your accounts. Keep this panel open while it runs.`;
     $("#start").disabled = n < 2 || !prefs.topic.trim();
@@ -189,7 +209,7 @@ function renderNew() {
     if ($("#start").disabled) return;
     const topicText = prefs.topic.trim();
     prefs.topic = "";
-    runLive({ topic: topicText, siteIds: SITES.filter((s) => prefs.selected.has(s.id)).map((s) => s.id), length: prefs.length, rounds: 2 });
+    runLive({ topic: topicText, siteIds: SITES.filter((s) => prefs.selected.has(s.id)).map((s) => s.id), length: prefs.length, rounds: prefs.rounds });
   }
 }
 
@@ -295,6 +315,7 @@ async function runLive({ topic, siteIds, length, rounds, continueFrom, question,
       <button class="back" id="leave">← New battle</button>
       ${followUpOf ? `<p class="muted followup">↳ Follow-up to: ${esc(followUpOf)}</p>` : ""}
       <h1>${esc(topic)}</h1>
+      <div id="attached"></div>
       <div class="chips">${agents.map((a) => `<span class="chip" style="--c:${colorOf(a.name)}">${esc(a.name)}</span>`).join("")}
         <span class="muted">${LENGTHS.find((l) => l.value === length).title} · ${prefs.mode === "manual" ? "copy & paste" : "automatic"}</span></div>
       <div class="steps">${steps.join("")}</div>
@@ -321,6 +342,29 @@ async function runLive({ topic, siteIds, length, rounds, continueFrom, question,
     }
   });
 
+  // The AIs can't open links (temporary chats, no browsing asked for), so read shared ChatGPT
+  // chats here and give everyone the text. A follow-up keeps the earlier battle's.
+  const attachments = [...(continueFrom?.saved.attachments ?? [])];
+  const showAttached = () =>
+    ($("#attached").innerHTML = attachments
+      .map((a) => `<p class="muted followup">📎 They read your shared ChatGPT chat “${esc(a.title)}” · ${a.messages} messages</p>`)
+      .join(""));
+  showAttached();
+  for (const url of more ? [] : findShareLinks(question ?? topic).slice(0, 3)) {
+    $("#attached").insertAdjacentHTML("beforeend", `<p class="muted followup" id="reading">Reading your shared ChatGPT chat…</p>`);
+    try {
+      attachments.push(attachmentFrom(await fetchSharedChat(url)));
+      showAttached();
+    } catch (e) {
+      running = null;
+      $("#verdict-slot").innerHTML = `<section class="card error-card"><h2>Couldn't read the shared chat</h2><p class="muted">${esc(e.message)}. Paste the parts that matter into the question instead.</p></section>`;
+      $("#reading")?.remove();
+      $("#stop")?.remove();
+      return;
+    }
+    if (controller.signal.aborted) return;
+  }
+
   let names = new Map();
   const onEvent = (e) => {
     switch (e.type) {
@@ -330,14 +374,18 @@ async function runLive({ topic, siteIds, length, rounds, continueFrom, question,
       case "round-done":
         // Keep the rounds so far, so closing the panel or a failure doesn't lose them.
         saveBattle(
-          toIncomplete({ topic, length, rounds: e.history, labels: e.labels, followUpOf: followUpOf ?? undefined }, agents),
+          toIncomplete({ topic, length, rounds: e.history, labels: e.labels, followUpOf: followUpOf ?? undefined, attachments }, agents),
           battleId,
         ).catch(() => {});
         break;
       case "retry": {
         const agent = agents.find((a) => a.name === e.agentName);
         const note = agent && view.querySelector(`#round-${e.round} .turn.pending[data-site="${agent.id}"] .thinking`);
-        if (note) note.childNodes[1].textContent = "Hit a hiccup, trying again";
+        if (note) {
+          const why = e.error.split("\n")[0];
+          note.childNodes[1].textContent = `Hit a hiccup (${why.length > 70 ? `${why.slice(0, 70)}…` : why}), trying again`;
+          note.title = e.error;
+        }
         break;
       }
       case "round-start": {
@@ -422,6 +470,7 @@ async function runLive({ topic, siteIds, length, rounds, continueFrom, question,
       length,
       signal: controller.signal,
       onEvent,
+      ...(attachments.length ? { attachments } : {}),
       ...(continueFrom ? { labels: new Map(continueFrom.saved.labels) } : {}),
       ...(resume ? { resume } : {}),
       ...(continueFrom && !more
@@ -487,7 +536,7 @@ function showSaved(entry, { fresh = false } = {}) {
     e.preventDefault();
     const q = $("input", bar).value.trim();
     if (!q) return;
-    runLive({ topic: q, siteIds, length: saved.length, rounds: 2, continueFrom: entry, question: q });
+    runLive({ topic: q, siteIds, length: saved.length, rounds: prefs.rounds, continueFrom: entry, question: q });
   });
   $("[data-more]", bar).addEventListener("click", () =>
     runLive({ topic: saved.topic, siteIds, length: saved.length, rounds: 1, continueFrom: entry, more: true }),

@@ -9,6 +9,7 @@ import type { FollowUp } from "./core/battle.ts";
 import { finalPositions, savedAnswer, type SavedBattle } from "./core/saved.ts";
 import type { Agent, Turn } from "./core/types.ts";
 import { LENGTHS, type Length } from "./core/verdict.ts";
+import { attachmentFrom, fetchSharedChat, findShareLinks, type Attachment, type SharedChat } from "./core/links.ts";
 import { truncate } from "./ui/term.ts";
 import { autoLineup, defaultJudge, explicitLineup, quotaNote } from "./lineup.ts";
 
@@ -32,8 +33,40 @@ export interface Plan {
   followUp?: FollowUp;
   /** Carried over from a continued battle that was itself a follow-up. */
   followUpOf?: string;
-  /** Save under this battle id, replacing it (finishing an interrupted battle). */
+  /** Save under this battle id, replacing it (finishing an interrupted battle, or debating a comparison). */
   replaces?: string;
+  /** Compare mode: one round of answers, no debate, no judges. */
+  compare?: boolean;
+  /** Debating a saved comparison: it's only replaced once the debate has a verdict. */
+  fromCompare?: boolean;
+  /** Shared conversations linked in the question, fetched by battler since the AIs can't browse. */
+  attachments?: Attachment[];
+}
+
+type ChatFetcher = (url: string) => Promise<SharedChat>;
+
+/**
+ * Read the shared ChatGPT conversations a question links to. The AIs run without tools, so they
+ * couldn't open the links themselves; a link that can't be read stops the battle before anyone's
+ * plan is spent on answers that just say "I can't open that".
+ */
+async function readLinks(text: string, fetchChat: ChatFetcher = fetchSharedChat): Promise<{ attachments: Attachment[]; notes: string[] }> {
+  const urls = findShareLinks(text).slice(0, 3);
+  const attachments: Attachment[] = [];
+  const notes: string[] = [];
+  for (const url of urls) {
+    let chat: SharedChat;
+    try {
+      chat = await fetchChat(url);
+    } catch (e) {
+      throw new PlanError(`couldn't read the shared ChatGPT chat ${url}: ${(e as Error).message}. Paste the parts that matter into the question instead.`);
+    }
+    const a = attachmentFrom(chat);
+    attachments.push(a);
+    const shortened = a.text.length < chat.messages.reduce((s, m) => s + m.text.length, 0) ? "; it's long, so the start and the latest messages are included" : "";
+    notes.push(`Read the shared ChatGPT chat "${a.title}" (${a.messages} messages${shortened}). Everyone sees it.`);
+  }
+  return { attachments, notes };
 }
 
 export const displayPath = (f: string) => (relative(process.cwd(), f).startsWith("..") ? f : relative(process.cwd(), f));
@@ -79,14 +112,18 @@ export async function newPlan(req: {
   rounds: number;
   agents?: string[];
   judge?: string;
+  /** Just compare their answers: one round, nobody judges. */
+  compare?: boolean;
   config: Config;
   check?: Checker;
+  /** For tests: reads a shared ChatGPT link. */
+  fetchChat?: ChatFetcher;
 }): Promise<Plan> {
   const topic = req.topic.trim();
   if (!topic) throw new PlanError("no topic given");
   if (topic.length > MAX_TOPIC) throw new PlanError(`the topic is ${topic.length.toLocaleString()} characters; keep it under ${MAX_TOPIC.toLocaleString()}`);
   const length = checkLength(req.length);
-  const rounds = checkRounds(req.rounds);
+  const rounds = req.compare ? 1 : checkRounds(req.rounds);
   let agents: Agent[];
   let notes: string[] = [];
   if (req.agents) {
@@ -106,7 +143,7 @@ export async function newPlan(req: {
   if (new Set(agents.map((a) => a.id)).size !== agents.length) throw new PlanError("each debater can only appear once");
   if (agents.length < 2) throw new PlanError("need at least 2 debaters");
   if (agents.length > 6) throw new PlanError("at most 6 debaters");
-  const judges = pickJudges(agents, length, req.judge ?? req.config.judge, req.config);
+  const judges = req.compare ? [] : pickJudges(agents, length, req.judge ?? req.config.judge, req.config);
   // Hand-picked debaters and judges get checked before anyone's plan is spent on the battle.
   const toCheck = [...(req.agents ? agents : []), ...judges.filter((j) => !agents.some((a) => a.id === j.id))];
   if (toCheck.length) {
@@ -114,7 +151,17 @@ export async function newPlan(req: {
     if (found.size) throw new PlanError(`not ready:\n  ${[...found.values()].join("\n  ")}\n\n  Run \`battler --doctor\` for details.`);
   }
   const note = quotaNote(agents);
-  return { topic, agents, judges, rounds, length, notes: note ? [...notes, note] : notes };
+  const links = await readLinks(topic, req.fetchChat);
+  return {
+    topic,
+    agents,
+    judges,
+    rounds,
+    length,
+    notes: [...links.notes, ...notes, ...(note ? [note] : [])],
+    ...(req.compare ? { compare: true } : {}),
+    ...(links.attachments.length ? { attachments: links.attachments } : {}),
+  };
 }
 
 /**
@@ -126,7 +173,16 @@ export async function continuePlan(
   saved: SavedBattle,
   from: string,
   question: string,
-  opts: { length?: string; rounds?: number; config: Config; judge?: string; check?: Checker },
+  opts: {
+    length?: string;
+    rounds?: number;
+    config: Config;
+    judge?: string;
+    /** Follow-ups: compare instead of debate. Defaults to what the earlier battle did. */
+    compare?: boolean;
+    check?: Checker;
+    fetchChat?: ChatFetcher;
+  },
 ): Promise<Plan> {
   const all = saved.agents.map((a) => {
     try {
@@ -149,16 +205,47 @@ export async function continuePlan(
   const notes = (first: string) => [first, ...extra, ...(note ? [note] : [])];
   if (question.trim().length > MAX_TOPIC) throw new PlanError(`the question is too long; keep it under ${MAX_TOPIC.toLocaleString()} characters`);
   if (question.trim()) {
-    const answer = saved.incomplete ? "(That debate stopped before the judges gave a verdict.)" : savedAnswer(saved);
+    const answer = saved.compare
+      ? "(Those answers were compared side by side, not debated or judged.)"
+      : saved.incomplete
+        ? "(That debate stopped before the judges gave a verdict.)"
+        : savedAnswer(saved);
+    const compare = opts.compare ?? Boolean(saved.compare);
+    // The earlier battle's shared chats stay in view; a link in the new question is read too.
+    const links = await readLinks(question, opts.fetchChat);
+    const attachments = [...(saved.attachments ?? []), ...links.attachments];
     return {
+      ...(attachments.length ? { attachments } : {}),
       topic: question.trim(),
+      agents,
+      judges: compare ? [] : judges,
+      length,
+      labels,
+      rounds: compare ? 1 : checkRounds(opts.rounds ?? opts.config.rounds ?? 2),
+      followUp: { topic: saved.topic, answer, finals: finalPositions(saved) },
+      notes: [...links.notes, ...notes(source)],
+      ...(compare ? { compare: true } : {}),
+    };
+  }
+  if (saved.compare) {
+    // Debate a comparison: rebuttals on the answers, then the judges. It becomes a full battle.
+    const answered = new Set(saved.rounds.at(-1)?.map((t) => t.agentId));
+    if ([...answered].filter((id) => agents.some((a) => a.id === id)).length < 2) {
+      throw new PlanError("only one AI answered this comparison, so there's nothing to debate. Ask it again to get everyone's answer.");
+    }
+    return {
+      fromCompare: true,
+      ...(saved.attachments?.length ? { attachments: saved.attachments } : {}),
+      topic: saved.topic,
       agents,
       judges,
       length,
       labels,
-      rounds: checkRounds(opts.rounds ?? opts.config.rounds ?? 2),
-      followUp: { topic: saved.topic, answer, finals: finalPositions(saved) },
-      notes: notes(source),
+      rounds: checkRounds(opts.rounds ?? 1),
+      resume: saved.rounds,
+      followUpOf: saved.followUpOf,
+      replaces: basename(from).replace(/\.(json|html|md)$/, ""),
+      notes: notes(`${source} · debating the answers`),
     };
   }
   const so = `${saved.rounds.length} round${saved.rounds.length === 1 ? "" : "s"} so far`;
@@ -173,6 +260,7 @@ export async function continuePlan(
     rounds,
     resume: saved.rounds,
     followUpOf: saved.followUpOf,
+    ...(saved.attachments?.length ? { attachments: saved.attachments } : {}),
     ...(saved.incomplete ? { replaces: basename(from).replace(/\.(json|html|md)$/, "") } : {}),
     notes: notes(`${source} · ${so}${saved.incomplete && rounds === 0 ? " · judging it now" : ""}`),
   };

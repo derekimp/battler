@@ -26,6 +26,7 @@ const API_KEY_VARS = [
   "GEMINI_API_KEY",
   "GOOGLE_API_KEY",
   "GOOGLE_GENAI_USE_VERTEXAI",
+  "ANTIGRAVITY_API_KEY",
 ];
 
 export function subscriptionEnv(): NodeJS.ProcessEnv {
@@ -44,11 +45,15 @@ interface RunResult {
   code: number | null;
 }
 
+const GEMINI_PERSONAL =
+  "Google stopped serving Gemini CLI to personal Google accounts (Google AI Pro and Ultra included) on 18 June 2026. It now needs a Gemini Code Assist licence (set GOOGLE_CLOUD_PROJECT). Its successor, Antigravity CLI, isn't supported by battler yet";
+
 const INSTALL_HINTS: Record<string, string> = {
-  claude: "install Claude Code: https://claude.com/claude-code",
-  codex: "install Codex CLI: npm install -g @openai/codex",
-  "cursor-agent": "install Cursor CLI: curl https://cursor.com/install -fsS | bash",
-  gemini: "install Gemini CLI: npm install -g @google/gemini-cli",
+  claude: "get Claude Code from https://claude.com/claude-code",
+  codex: "install it with: npm install -g @openai/codex",
+  "cursor-agent": "install it with: curl https://cursor.com/install -fsS | bash",
+  gemini: "optional, and it needs a Gemini Code Assist licence; install it with: npm install -g @google/gemini-cli",
+  agy: "install it with: curl -fsSL https://antigravity.google/cli/install.sh | bash",
 };
 
 // Long battles on slow models (Grok via Cursor adds a cloud environment start) can take a while.
@@ -105,6 +110,8 @@ export function explain(cmd: string, raw: string): string {
     if (grok?.length) return `${hint}. Grok models your Cursor account offers: ${grok.join(", ")}`;
   } else if (/unknown (option|argument)|unexpected argument|unrecognized (option|argument)|error: option/i.test(raw)) {
     hint = `${cmd} rejected a flag battler uses, so its command-line interface has probably changed. Update ${cmd} and battler`;
+  } else if (/no longer supported for Gemini Code Assist for individuals|migrate to the Antigravity/i.test(raw)) {
+    return GEMINI_PERSONAL;
   } else if (/rate.?limit|usage limit|quota|too many requests|\b429\b/i.test(raw)) {
     hint = `you've hit your ${cmd} subscription usage limit. Try again later or leave this debater out`;
   } else if (/not logged in|log ?in required|unauthori[sz]ed|authenticat/i.test(raw)) {
@@ -324,17 +331,59 @@ export function cursorGrokAgent(model?: string): Agent {
 export const FORMER_GROK_DEFAULTS = ["grok-4.7-medium"];
 
 
+/** The Antigravity CLI binary. The env var is for tests, so they never reach a real one. */
+const agyBin = () => process.env.BATTLER_AGY || "agy";
+
+/** Gemini Pro through Antigravity CLI unless another model is asked for. */
+export const DEFAULT_AGY_MODEL = "gemini-3.1-pro-high";
+
+/** Which CLI Gemini runs through: Antigravity CLI when it's installed, else the old Gemini CLI. */
+let geminiBackend: Promise<"agy" | "gemini"> | undefined;
+const pickGeminiBackend = () =>
+  (geminiBackend ??= run(agyBin(), ["--version"], { timeoutMs: 30_000 }).then(
+    (r) => (r.code === 0 ? "agy" : "gemini"),
+    () => "gemini",
+  ));
+/** For tests: look for the CLIs again. */
+export const resetGeminiBackend = () => (geminiBackend = undefined);
+
 /**
- * Gemini through the Gemini CLI, signed in with a Google account (free, or Google AI Pro/Ultra).
- * Runs in plan mode, which is read-only. An API-key or Vertex login isn't a subscription, so
- * check() reports it rather than using it.
+ * Gemini through Antigravity CLI (`agy`), Google's successor to Gemini CLI, signed in with a Google
+ * account. Headless print mode can't ask for permissions, so every tool is refused: it can only
+ * answer. Falls back to Gemini CLI, which Google now serves only to Gemini Code Assist licences.
  */
 export function geminiAgent(model?: string): Agent {
+  const viaAgy = {
+    async ask(prompt: string, opts: AskOptions = {}) {
+      const args = ["-p", withSystem(prompt, opts.system), "--output-format", "json", "--disable-slash-commands", "--model", model ?? DEFAULT_AGY_MODEL];
+      const r = await run(agyBin(), args, { signal: opts.signal });
+      let json: { status?: string; response?: string; denied_actions?: { display_name?: string }[] };
+      try {
+        json = JSON.parse(r.stdout.slice(r.stdout.lastIndexOf("\n{") + 1));
+      } catch {
+        throw failure("agy", r);
+      }
+      const response = json.response?.trim();
+      if (response) return response;
+      if (json.denied_actions?.length) {
+        throw new Error(`agy tried to use a tool (${json.denied_actions.map((d) => d.display_name).join(", ")}) instead of answering; battler doesn't allow tools`);
+      }
+      throw new Error(`agy: ${explain("agy", r.stderr || json.status || "empty response")}`);
+    },
+    async check() {
+      const r = await run(agyBin(), ["models"], { timeoutMs: 45_000 }).catch((e: Error) => e);
+      if (r instanceof Error) return r.message;
+      if (r.code !== 0 || !/gemini/i.test(r.stdout)) return `not signed in; run \`agy\` once and sign in with your Google account`;
+      if (model && !r.stdout.includes(model)) return `the model ${model} isn't in Antigravity's list; see \`agy models\``;
+      return null;
+    },
+  };
   return {
     id: "gemini",
     name: "Gemini",
     spec: model ? `gemini:${model}` : "gemini",
     async ask(prompt: string, opts: AskOptions = {}) {
+      if ((await pickGeminiBackend()) === "agy") return viaAgy.ask(prompt, opts);
       const args = ["-p", withSystem(prompt, opts.system), "-o", "json", "--approval-mode", "plan", "--skip-trust"];
       if (model) args.push("-m", model);
       const r = await run("gemini", args, { signal: opts.signal });
@@ -352,8 +401,12 @@ export function geminiAgent(model?: string): Agent {
       return json.response.trim();
     },
     async check() {
+      if ((await pickGeminiBackend()) === "agy") return viaAgy.check();
       const r = await run("gemini", ["--version"], { timeoutMs: 30_000 }).catch((e: Error) => e);
-      if (r instanceof Error) return r.message;
+      if (r instanceof Error) {
+        // Neither CLI: point to the one personal accounts can use.
+        return /not found on PATH/.test(r.message) ? `Antigravity CLI (\`agy\`) not found on PATH; optional; ${INSTALL_HINTS.agy}` : r.message;
+      }
       const home = process.env.BATTLER_GEMINI_HOME || join(homedir(), ".gemini"); // env var: tests only
       let authType: string | undefined;
       try {
@@ -362,6 +415,9 @@ export function geminiAgent(model?: string): Agent {
       } catch {}
       if (authType && !/oauth|google/i.test(authType)) return `signed in with ${authType}, not a Google account; run \`gemini\` and choose Login with Google`;
       if (!existsSync(join(home, "oauth_creds.json"))) return "not logged in; run `gemini` once and choose Login with Google";
+      // Since 18 June 2026 Google serves Gemini CLI only to Gemini Code Assist licences (which name a
+      // Google Cloud project), not to personal accounts, Google AI Pro and Ultra included.
+      if (!process.env.GOOGLE_CLOUD_PROJECT && !process.env.GOOGLE_CLOUD_PROJECT_ID) return GEMINI_PERSONAL;
       return null;
     },
   };

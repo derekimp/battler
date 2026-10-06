@@ -1,6 +1,6 @@
 {
   "name": "battler",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Make your AI subscriptions (Claude, ChatGPT, Grok) debate each other, then judge each other blind. No API keys.",
   "author": "derekimp",
   "repository": {
@@ -27,7 +27,9 @@
     "test:dist": "npm run build && BATTLER_ENTRY=dist/cli.js node --test test/cli.test.ts",
     "prepublishOnly": "npm run typecheck && npm test && npm run build",
     "build:extension": "npm run build && node scripts/build-extension.mjs",
-    "test:extension": "npm run build:extension && node --test test/extension-bundle.check.ts"
+    "test:extension": "npm run build:extension && node --test test/extension-bundle.check.ts",
+    "test:web": "node --test test/web-ui.check.ts",
+    "test:live": "node scripts/live-check.mjs"
   },
   "license": "MIT",
   "files": [
@@ -49,6 +51,7 @@
   ],
   "devDependencies": {
     "@types/node": "^26.6.3",
+    "playwright-core": "^1.63.0",
     "typescript": "^7.0.2"
   }
 }

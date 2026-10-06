@@ -99,7 +99,7 @@ footer a{color:var(--ink)}
       <a class="btn" href="https://github.com/derekimp/battler">★ Star on GitHub</a>
     </div>
     <div class="demo">
-      <video src="demo-web.mp4" poster="social-preview.png" autoplay muted loop playsinline preload="metadata" aria-label="A battle in the battler web app: the question, live answers, rebuttals, judging, then the verdict and scorecard"></video>
+      <video src="demo-web.mp4" poster="social-preview.png" autoplay muted loop playsinline preload="metadata" aria-label="The battler web app: four AIs compare answers, debate them, judge each other blind, then the verdict, scorecard and share image"></video>
     </div>
     <p class="caption">A real battle, with the waiting sped up. No API keys were used.</p>
   </header>
@@ -134,7 +134,9 @@ battler setup   <span class="c"># checks your AI tools, helps sign in, runs a te
 battler serve   <span class="c"># opens the web app</span></code></pre>
       <pre><button class="copy" data-copy='battler "Is it still worth learning to code in 2026?"'>Copy</button><code><span class="c"># or right in the terminal</span>
 battler "Is it still worth learning to code in 2026?"</code></pre>
-      <p class="req">macOS · Node.js 22+ · at least two of Claude Code, Codex and Cursor (or just Cursor) · <a href="https://github.com/derekimp/battler#requirements">details</a></p>
+      <pre><button class="copy" data-copy='npx battler -c "Best way to learn SQL?"'>Copy</button><code><span class="c"># no install: just compare their answers side by side</span>
+npx battler -c "Best way to learn SQL?"</code></pre>
+      <p class="req">macOS or Linux · Node.js 22+ · at least two of Claude Code, Codex and Cursor (or just Cursor) · <a href="https://github.com/derekimp/battler#requirements">details</a></p>
     </div>
   </section>
 
@@ -146,7 +148,7 @@ battler "Is it still worth learning to code in 2026?"</code></pre>
       <details><summary>Which AIs does it support?</summary><p>Claude (via Claude Code), GPT (via Codex CLI), Grok (via Cursor), and Gemini (via Gemini CLI) if you have it. If you only have Cursor, it can play every part. You need at least two debaters.</p></details>
       <details><summary>How is the winner decided?</summary><p>Each AI rates the others 1-5 on accuracy, reasoning, engagement and calibration, without knowing who's who and without scoring itself. battler averages the ratings, and the top of the scorecard wins. Treat scores as informed opinion; the answer and the points of agreement are the most useful part.</p></details>
       <details><summary>Is this allowed by the AI providers?</summary><p>The terminal and web app call each vendor's official command-line tool in its documented non-interactive mode. The Chrome extension automates the chat websites, which is a grey area in most providers' terms; it only acts when you start a battle, and its copy &amp; paste mode avoids automation entirely. You're responsible for using your accounts within their terms.</p></details>
-      <details><summary>Does it work on Windows or Linux?</summary><p>It's built and tested on macOS. Linux will probably work but isn't tested yet; Windows isn't supported.</p></details>
+      <details><summary>Does it work on Windows or Linux?</summary><p>macOS and Linux, both tested on every change. Windows isn't supported yet.</p></details>
     </div>
   </section>
 

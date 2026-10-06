@@ -1,3 +1,4 @@
+import type { Attachment } from "./links.ts";
 import type { Length, Verdict } from "./verdict.ts";
 
 /**
@@ -52,6 +53,10 @@ export interface BattleResult {
   followUpOf?: string;
   /** Set when this battle continued an earlier one: how many rounds it already had. */
   resumedFrom?: number;
+  /** Compare mode: each AI's answer, not debated or judged (no verdict). */
+  compare?: boolean;
+  /** Shared conversations the question linked to, as the AIs saw them. */
+  attachments?: Attachment[];
 }
 
 export type BattleEvent =

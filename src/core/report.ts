@@ -12,6 +12,9 @@ const cell = (s: string) => s.replace(/\|/g, "\\|").replace(/\n+/g, " ");
 
 /** The verdict as Markdown. Short battles get the answer and winner only. */
 export function renderVerdictMarkdown(result: BattleResult): string {
+  if (result.compare) {
+    return (result.rounds.at(-1) ?? []).map((t) => `## ${t.agentName}\n\n${revealNames(t.text, result.names).trim()}`).join("\n\n") + "\n";
+  }
   const v = namedVerdict(result);
   if (!v) return revealNames(result.verdictText, result.names).trim() + "\n";
 
@@ -46,7 +49,18 @@ export function renderVerdictMarkdown(result: BattleResult): string {
 }
 
 /** Full Markdown report: verdict first, then the transcript with real names revealed. */
+const attachedLines = (result: BattleResult) =>
+  (result.attachments ?? []).map((a) => `*Shared ChatGPT chat: [${a.title}](${a.url}) (${a.messages} messages)*\n\n`).join("");
+
 export function renderReport(result: BattleResult): string {
+  if (result.compare) {
+    const context = (result.followUpOf ? `*Follow-up to: ${result.followUpOf}*\n\n` : "") + attachedLines(result);
+    return `# ${result.topic}
+
+${context}*${[...result.names.values()].join(", ")} · compared side by side, not debated or judged · ${new Date().toISOString().slice(0, 16).replace("T", " ")}*
+
+${renderVerdictMarkdown(result)}`;
+  }
   const rounds = result.rounds
     .map((turns, i) => {
       const title = i === 0 ? "Round 1: opening statements" : `Round ${i + 1}: rebuttals and revisions`;
@@ -61,7 +75,7 @@ export function renderReport(result: BattleResult): string {
     : "";
   const debaters = [...result.names.values()].join(" vs ");
 
-  const context = result.followUpOf ? `*Follow-up to: ${result.followUpOf}*\n\n` : "";
+  const context = (result.followUpOf ? `*Follow-up to: ${result.followUpOf}*\n\n` : "") + attachedLines(result);
   return `# ${result.topic}
 
 ${context}*${debaters} · ${result.rounds.length} round(s) · ${result.length} · judged by ${judgedBy(result.judges)} · ${new Date().toISOString().slice(0, 16).replace("T", " ")}*${dropped}

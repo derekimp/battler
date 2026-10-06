@@ -42,12 +42,12 @@ export const TOOLS: Record<AgentId, Tool> = {
     binary: "cursor-agent",
   },
   gemini: {
-    tool: "Gemini CLI",
-    company: "a Google account (free, or Google AI Pro)",
-    install: ["npm", ["install", "-g", "@google/gemini-cli"]],
-    // Gemini CLI signs in on first run: choose "Login with Google", then quit with /quit.
-    login: ["gemini", []],
-    binary: "gemini",
+    tool: "Antigravity CLI",
+    company: "a Google account",
+    install: ["sh", ["-c", "curl -fsSL https://antigravity.google/cli/install.sh | bash"]],
+    // agy signs in on first run; quit it with /quit once that's done.
+    login: ["agy", []],
+    binary: "agy",
   },
 };
 
@@ -137,7 +137,7 @@ export async function runSetup(deps: SetupDeps): Promise<number> {
     }
     const after = (await deps.check())[id];
     if (after && !/not found on PATH/.test(after)) {
-      const how = id === "gemini" ? " Choose \"Login with Google\", then type /quit when it's done." : "";
+      const how = id === "gemini" ? " Sign in with Google, then type /quit when it's done." : "";
       if (!(await prompt.confirm(`Log in to ${t.tool} with ${t.company}? This opens your browser.${how}`, true))) continue;
       const code = await deps.run(...t.login);
       if (code !== 0) log(st.red(`  Logging in to ${t.tool} didn't finish. You can run it yourself: ${t.login.flat().join(" ")}`));
