@@ -141,11 +141,14 @@ export function claudeAgent(model?: string): Agent {
     id: "claude",
     name: "Claude",
     spec: model ? `claude:${model}` : "claude",
+    searches: true,
     async ask(prompt: string, opts: AskOptions = {}) {
+      // Web search: exactly the two web tools, pre-approved; otherwise no tools at all.
+      const tools = opts.web ? ["--tools", "WebSearch,WebFetch", "--allowedTools", "WebSearch,WebFetch"] : ["--tools", ""];
       const args = [
         "-p",
         "--output-format", "json",
-        "--tools", "",
+        ...tools,
         "--strict-mcp-config",
         "--no-session-persistence",
       ];
@@ -205,7 +208,8 @@ export const resetCodexFallback = () => void (codexWorkingModel = undefined);
 export function codexAgent(model?: string): Agent {
   const once = async (prompt: string, opts: AskOptions, m: string | undefined) => {
     const outFile = join(sandboxDir, `codex-${process.pid}-${Math.random().toString(36).slice(2)}.txt`);
-    const args = ["exec", "--skip-git-repo-check", "--ephemeral", "-s", "read-only", "-o", outFile];
+    // --search adds Codex's own web search; the sandbox stays read-only.
+    const args = [...(opts.web ? ["--search"] : []), "exec", "--skip-git-repo-check", "--ephemeral", "-s", "read-only", "-o", outFile];
     if (m) args.push("-m", m);
     args.push("-");
     const r = await run("codex", args, { stdin: withSystem(prompt, opts.system), signal: opts.signal });
@@ -220,6 +224,7 @@ export function codexAgent(model?: string): Agent {
     id: "codex",
     name: "GPT",
     spec: model ? `codex:${model}` : "codex",
+    searches: true,
     async ask(prompt: string, opts: AskOptions = {}) {
       let { r, text } = await once(prompt, opts, model ?? codexWorkingModel);
       if (r.code !== 0 && !model && CHATGPT_UNSUPPORTED.test(r.stderr + r.stdout)) {

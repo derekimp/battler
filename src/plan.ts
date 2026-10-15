@@ -41,6 +41,17 @@ export interface Plan {
   fromCompare?: boolean;
   /** Shared conversations linked in the question, fetched by battler since the AIs can't browse. */
   attachments?: Attachment[];
+  /** Debaters that can search the web do so. */
+  web?: boolean;
+}
+
+/** Who will search and who won't, for the notes before a battle. */
+function webNote(agents: Agent[]): string {
+  const can = agents.filter((a) => a.searches).map((a) => a.name);
+  const cannot = agents.filter((a) => !a.searches).map((a) => a.name);
+  if (!can.length) return "None of these debaters can search the web through its CLI, so they answer from what they know.";
+  const list = (xs: string[]) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`);
+  return `Searching the web: ${list(can)}.${cannot.length ? ` ${list(cannot)} can't search through ${cannot.length === 1 ? "its" : "their"} CLI, so ${cannot.length === 1 ? "it answers" : "they answer"} from what ${cannot.length === 1 ? "it knows" : "they know"}.` : ""}`;
 }
 
 type ChatFetcher = (url: string) => Promise<SharedChat>;
@@ -114,6 +125,8 @@ export async function newPlan(req: {
   judge?: string;
   /** Just compare their answers: one round, nobody judges. */
   compare?: boolean;
+  /** Let debaters that can search the web do so. */
+  web?: boolean;
   config: Config;
   check?: Checker;
   /** For tests: reads a shared ChatGPT link. */
@@ -152,13 +165,15 @@ export async function newPlan(req: {
   }
   const note = quotaNote(agents);
   const links = await readLinks(topic, req.fetchChat);
+  const web = req.web ?? req.config.web ?? false;
   return {
     topic,
     agents,
     judges,
     rounds,
     length,
-    notes: [...links.notes, ...notes, ...(note ? [note] : [])],
+    notes: [...links.notes, ...(web ? [webNote(agents)] : []), ...notes, ...(note ? [note] : [])],
+    ...(web ? { web: true } : {}),
     ...(req.compare ? { compare: true } : {}),
     ...(links.attachments.length ? { attachments: links.attachments } : {}),
   };
@@ -180,6 +195,8 @@ export async function continuePlan(
     judge?: string;
     /** Follow-ups: compare instead of debate. Defaults to what the earlier battle did. */
     compare?: boolean;
+    /** Search the web; defaults to what the earlier battle did. */
+    web?: boolean;
     check?: Checker;
     fetchChat?: ChatFetcher;
   },
@@ -202,7 +219,9 @@ export async function continuePlan(
   const source = `Continuing ${displayPath(from.replace(/\.json$/, ".html"))}`;
   const extra = [...unready.values()].map((p) => `Leaving out ${p}`);
   const note = quotaNote(agents);
-  const notes = (first: string) => [first, ...extra, ...(note ? [note] : [])];
+  const web = opts.web ?? Boolean(saved.web);
+  const notes = (first: string) => [first, ...(web ? [webNote(agents)] : []), ...extra, ...(note ? [note] : [])];
+  const webFlag = web ? { web: true } : {};
   if (question.trim().length > MAX_TOPIC) throw new PlanError(`the question is too long; keep it under ${MAX_TOPIC.toLocaleString()} characters`);
   if (question.trim()) {
     const answer = saved.compare
@@ -215,6 +234,7 @@ export async function continuePlan(
     const links = await readLinks(question, opts.fetchChat);
     const attachments = [...(saved.attachments ?? []), ...links.attachments];
     return {
+      ...webFlag,
       ...(attachments.length ? { attachments } : {}),
       topic: question.trim(),
       agents,
@@ -234,6 +254,7 @@ export async function continuePlan(
       throw new PlanError("only one AI answered this comparison, so there's nothing to debate. Ask it again to get everyone's answer.");
     }
     return {
+      ...webFlag,
       fromCompare: true,
       ...(saved.attachments?.length ? { attachments: saved.attachments } : {}),
       topic: saved.topic,
@@ -260,6 +281,7 @@ export async function continuePlan(
     rounds,
     resume: saved.rounds,
     followUpOf: saved.followUpOf,
+    ...webFlag,
     ...(saved.attachments?.length ? { attachments: saved.attachments } : {}),
     ...(saved.incomplete ? { replaces: basename(from).replace(/\.(json|html|md)$/, "") } : {}),
     notes: notes(`${source} · ${so}${saved.incomplete && rounds === 0 ? " · judging it now" : ""}`),

@@ -78,7 +78,7 @@ ${renderVerdictMarkdown(result)}`;
   const context = (result.followUpOf ? `*Follow-up to: ${result.followUpOf}*\n\n` : "") + attachedLines(result);
   return `# ${result.topic}
 
-${context}*${debaters} · ${result.rounds.length} round(s) · ${result.length} · judged by ${judgedBy(result.judges)} · ${new Date().toISOString().slice(0, 16).replace("T", " ")}*${dropped}
+${context}*${debaters} · ${result.rounds.length} round(s) · ${result.length}${result.web ? " · web search on" : ""} · judged by ${judgedBy(result.judges)} · ${new Date().toISOString().slice(0, 16).replace("T", " ")}*${dropped}
 
 ${renderVerdictMarkdown(result)}
 ---

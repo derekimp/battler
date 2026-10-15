@@ -17,12 +17,16 @@ export interface Agent {
   ask(prompt: string, opts?: AskOptions): Promise<string>;
   /** Cheap readiness check (installed + logged in). Returns an error message or null. */
   check(): Promise<string | null>;
+  /** It can search the web when asked (AskOptions.web), with no other tools. */
+  searches?: boolean;
 }
 
 export interface AskOptions {
   /** Replaces the agent's default system prompt where the backend supports it. */
   system?: string;
   signal?: AbortSignal;
+  /** Let it search the web and read pages (and nothing else), if it can. */
+  web?: boolean;
 }
 
 export interface Turn {
@@ -57,6 +61,8 @@ export interface BattleResult {
   compare?: boolean;
   /** Shared conversations the question linked to, as the AIs saw them. */
   attachments?: Attachment[];
+  /** Debaters that can search the web did. */
+  web?: boolean;
 }
 
 export type BattleEvent =

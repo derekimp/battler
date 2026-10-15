@@ -289,3 +289,40 @@ test("debaters and judges are told to start fresh, ignoring what they know about
   await runBattle({ topic: "T?", agents: [agent("claude", "Claude"), agent("codex", "GPT")], judges: [], rounds: 1, length: "short" });
   assert.ok(seen.length === 2 && seen.every((s) => s.includes("fresh, standalone session")));
 });
+
+test("web search: only debaters that can search do, with the web prompt; judges don't", async () => {
+  const seen: { name: string; system: string; web?: boolean }[] = [];
+  const agent = (id: string, name: string, searches: boolean) => ({
+    ...fakeAgent(id, (_p, o) => (seen.push({ name, system: o.system ?? "", web: o.web }), "## Position\nok"), name),
+    searches,
+  });
+  const judge = fakeAgent("claude", (p, o) => (seen.push({ name: "judge", system: o.system ?? "", web: o.web }), verdictJson(p)), "Claude");
+  const result = await runBattle({
+    topic: "T?",
+    agents: [agent("claude", "Claude", true), agent("grok", "Grok", false)],
+    judges: [{ ...judge, searches: true }],
+    rounds: 1,
+    length: "short",
+    web: true,
+  });
+  const claude = seen.find((s) => s.name === "Claude")!;
+  const grok = seen.find((s) => s.name === "Grok")!;
+  const judged = seen.find((s) => s.name === "judge")!;
+  assert.equal(claude.web, true);
+  assert.match(claude.system, /You may search the web/);
+  assert.equal(grok.web, undefined);
+  assert.match(grok.system, /Do not use tools/);
+  assert.equal(judged.web, undefined, "judges judge the transcript as it is");
+  assert.equal(result.web, true);
+  assert.equal(toSaved(result, []).web, true);
+});
+
+test("a web battle says who searches; continuing keeps it on", async () => {
+  const plan = await newPlan({ topic: "T?", length: "short", rounds: 1, agents: ["claude", "grok"], web: true, config: {}, check: async () => null });
+  assert.equal(plan.web, true);
+  assert.ok(plan.notes.includes("Searching the web: Claude. Grok can't search through its CLI, so it answers from what it knows."));
+  const saved = { ...savedCompare, web: true };
+  assert.equal((await continuePlan(saved, "/x/t.json", "", { config: {}, check: async () => null })).web, true);
+  assert.equal((await continuePlan(saved, "/x/t.json", "And then?", { config: {}, check: async () => null })).web, true);
+  assert.equal((await continuePlan(savedCompare, "/x/t.json", "And then?", { config: {}, check: async () => null })).web, undefined);
+});

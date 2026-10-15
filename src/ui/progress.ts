@@ -44,7 +44,7 @@ export class Progress {
     const vs = opts.agents.map((n) => st.fg(debaterColor(n), st.bold(n))).join(st.dim(" vs "));
     this.print("");
     for (const s of opts.skipped) {
-      const mark = /^Continuing/.test(s) ? st.cyan("↻") : /^Read the shared/.test(s) ? st.cyan("+") : st.yellow("!");
+      const mark = /^Continuing/.test(s) ? st.cyan("↻") : /^(Read the shared|Searching the web|None of these debaters can search)/.test(s) ? st.cyan("+") : st.yellow("!");
       this.print(`  ${mark} ${st.dim(s)}`);
     }
     this.print(`  ${vs}`);

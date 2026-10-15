@@ -229,3 +229,22 @@ test("Gemini's model is picked from what Antigravity offers: Pro over Flash, new
   assert.equal(bestAgyModel("gemini-3.5-flash-lite\ngemini-3.6-flash-low\n"), "gemini-3.6-flash-low");
   assert.equal(bestAgyModel("claude-sonnet-4-6\n"), null);
 });
+
+test("web search: Claude gets exactly the two web tools, Codex gets --search; without it, no tools", async () => {
+  await claudeAgent().ask("hi", { web: true });
+  await claudeAgent().ask("hi");
+  const [webCall, plainCall] = calls().filter((c) => c.cli === "claude" && c.args.includes("-p"));
+  const after = (args: string[], flag: string) => args[args.indexOf(flag) + 1];
+  assert.equal(after(webCall.args, "--tools"), "WebSearch,WebFetch");
+  assert.equal(after(webCall.args, "--allowedTools"), "WebSearch,WebFetch");
+  assert.equal(after(plainCall.args, "--tools"), "");
+  assert.ok(!plainCall.args.includes("--allowedTools"));
+
+  await codexAgent().ask("hi", { web: true });
+  await codexAgent().ask("hi");
+  const [codexWeb, codexPlain] = calls().filter((c) => c.cli === "codex" && c.args.includes("exec"));
+  assert.deepEqual(codexWeb.args.slice(0, 2), ["--search", "exec"]);
+  assert.ok(codexWeb.args.includes("read-only"), "the sandbox stays read-only");
+  assert.equal(codexPlain.args[0], "exec");
+  assert.ok(claudeAgent().searches && codexAgent().searches);
+});

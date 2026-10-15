@@ -86,6 +86,7 @@ test("home: the AIs' status, and Start waits for a topic", async () => {
   await page.click('[data-step="-1"]');
   await page.click('[data-id="codex"]');
   assert.match(await page.textContent("#cost") ?? "", /About 6 AI calls/);
+  assert.ok(await page.isVisible("#web"), "the web search switch is on the form");
   await page.click('[data-id="grok"]');
   assert.match(await page.textContent("#cost") ?? "", /Pick at least 2/);
   assert.ok(await page.isDisabled("#start"));
@@ -97,11 +98,13 @@ test("a debate runs live, ends with a verdict, and is saved; the topic is shown 
   const topic = `<img src=x onerror="window.__xss=1"> Tabs or spaces?`;
   await page.waitForSelector("#start");
   await page.fill("#topic", topic);
+  await page.check("#web");
   await page.click("#start");
   await page.waitForSelector(".round-live");
   await verdict(page);
   assert.match(page.url(), /#\/b\//);
   assert.equal(await page.textContent(".battle-head h1"), topic);
+  assert.match(await page.textContent(".battle-head .meta") ?? "", /web search on/);
   assert.equal(await page.evaluate(() => (window as any).__xss), undefined);
   assert.equal(await page.locator(".timeline li.done").count(), 3, "opening, round 2 and verdict all done");
   assert.match(await page.textContent("#verdict-slot") ?? "", /modular monolith/i);

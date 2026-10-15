@@ -95,6 +95,7 @@ function summary(id: string, saved: SavedBattle) {
     headline: saved.incomplete ? "interrupted" : saved.compare ? "answers compared" : v ? winnerHeadline(v) : null,
     incomplete: Boolean(saved.incomplete),
     compare: Boolean(saved.compare),
+    web: Boolean(saved.web),
   };
 }
 
@@ -189,6 +190,7 @@ export function startServer(opts: ServeOptions): Server & { stopAll(): void } {
       debaters: plan.agents.map((a) => ({ name: a.name, color: htmlColor(a.name) })),
       judges: plan.judges.map((j) => j.name),
       compare: Boolean(plan.compare),
+      web: Boolean(plan.web),
       attachments: (plan.attachments ?? []).map((a) => ({ url: a.url, title: a.title, messages: a.messages })),
       // File paths mean nothing in the browser: the follow-up line already says what this continues.
       notes: plan.notes.flatMap((n) => {
@@ -306,6 +308,7 @@ export function startServer(opts: ServeOptions): Server & { stopAll(): void } {
           agents: Array.isArray(body.agents) ? body.agents.map(String) : undefined,
           judge: body.judge ?? undefined,
           compare: Boolean(body.compare),
+          ...(body.web !== undefined ? { web: Boolean(body.web) } : {}),
           config: opts.config,
         });
       }

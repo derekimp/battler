@@ -101,6 +101,7 @@ export async function runPlan(
       resume: plan.resume,
       followUp: plan.followUp,
       attachments: plan.attachments,
+      web: plan.web,
       signal: opts.signal,
       onEvent,
       retryDelayMs: opts.retryDelayMs,

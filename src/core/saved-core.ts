@@ -26,6 +26,8 @@ export interface SavedBattle {
   compare?: boolean;
   /** Shared conversations the question linked to, as the AIs saw them (so continuing keeps them). */
   attachments?: Attachment[];
+  /** Debaters that can search the web did (and continuing keeps doing so). */
+  web?: boolean;
 }
 
 /** A battle that stopped before its verdict, from its rounds so far. */
@@ -66,6 +68,7 @@ export function toSaved(result: BattleResult, agents: Agent[], createdAt = new D
     ...(result.followUpOf ? { followUpOf: result.followUpOf } : {}),
     ...(result.compare ? { compare: true } : {}),
     ...(result.attachments?.length ? { attachments: result.attachments } : {}),
+    ...(result.web ? { web: true } : {}),
   };
 }
 
@@ -100,6 +103,7 @@ export function savedToResult(saved: SavedBattle): BattleResult {
     ...(saved.followUpOf ? { followUpOf: saved.followUpOf } : {}),
     ...(saved.compare ? { compare: true } : {}),
     ...(saved.attachments?.length ? { attachments: saved.attachments } : {}),
+    ...(saved.web ? { web: true } : {}),
   };
 }
 
