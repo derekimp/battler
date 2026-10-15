@@ -220,3 +220,12 @@ test("Gemini through Antigravity CLI: print mode, Gemini Pro by default, no tool
     resetGeminiBackend();
   }
 });
+
+test("Gemini's model is picked from what Antigravity offers: Pro over Flash, newest, highest effort", async () => {
+  const { bestAgyModel } = await import("../src/adapters/cli-agents.ts");
+  const october = "Fetching available models...\ngemini-3.8-flash-high\tGemini 3.8 Flash (High)\ngemini-3.8-flash-medium\tGemini 3.8 Flash (Medium)\nclaude-sonnet-4-6\tClaude Sonnet 4.6\ngpt-oss-120b-medium\tGPT-OSS";
+  assert.equal(bestAgyModel(october), "gemini-3.8-flash-high");
+  assert.equal(bestAgyModel("gemini-3.1-pro-low\ngemini-3.1-pro-high\ngemini-3.8-flash-high\n"), "gemini-3.1-pro-high");
+  assert.equal(bestAgyModel("gemini-3.5-flash-lite\ngemini-3.6-flash-low\n"), "gemini-3.6-flash-low");
+  assert.equal(bestAgyModel("claude-sonnet-4-6\n"), null);
+});
