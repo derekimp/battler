@@ -49,6 +49,8 @@
       replyBody: ["message-content .markdown", "message-content"],
       loggedOut: ["a[href*='accounts.google.com/ServiceLogin']", "a[aria-label^='Sign in' i]"],
       modelPicker: "button.input-area-switch",
+      // Gemini's menu changes as Google renames models; without 3.1 Pro, use what's selected.
+      modelOptional: true,
       modelChosen: (model) => (document.querySelector("button.input-area-switch")?.getAttribute("aria-label") ?? "").includes(`currently ${model.split(" ").at(-1)}`),
       findModelItem: (model) =>
         [...document.querySelectorAll("[role='menuitem'], [role='menuitemradio'], .mat-mdc-menu-item")].find((e) => e.textContent.includes(model)) ?? null,
@@ -187,6 +189,7 @@
     const item = await waitFor(findItem, { timeout: 5_000, what: `the model ${model}` }).catch(() => null);
     if (!item) {
       document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      if (driver.modelOptional) return;
       throw new Error(`${model} isn't in the model menu`);
     }
     item.click();

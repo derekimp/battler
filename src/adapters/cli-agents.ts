@@ -141,11 +141,14 @@ export function claudeAgent(model?: string): Agent {
     id: "claude",
     name: "Claude",
     spec: model ? `claude:${model}` : "claude",
+    searches: true,
     async ask(prompt: string, opts: AskOptions = {}) {
+      // Web search: exactly the two web tools, pre-approved; otherwise no tools at all.
+      const tools = opts.web ? ["--tools", "WebSearch,WebFetch", "--allowedTools", "WebSearch,WebFetch"] : ["--tools", ""];
       const args = [
         "-p",
         "--output-format", "json",
-        "--tools", "",
+        ...tools,
         "--strict-mcp-config",
         "--no-session-persistence",
       ];
@@ -205,7 +208,8 @@ export const resetCodexFallback = () => void (codexWorkingModel = undefined);
 export function codexAgent(model?: string): Agent {
   const once = async (prompt: string, opts: AskOptions, m: string | undefined) => {
     const outFile = join(sandboxDir, `codex-${process.pid}-${Math.random().toString(36).slice(2)}.txt`);
-    const args = ["exec", "--skip-git-repo-check", "--ephemeral", "-s", "read-only", "-o", outFile];
+    // --search adds Codex's own web search; the sandbox stays read-only.
+    const args = [...(opts.web ? ["--search"] : []), "exec", "--skip-git-repo-check", "--ephemeral", "-s", "read-only", "-o", outFile];
     if (m) args.push("-m", m);
     args.push("-");
     const r = await run("codex", args, { stdin: withSystem(prompt, opts.system), signal: opts.signal });
@@ -220,6 +224,7 @@ export function codexAgent(model?: string): Agent {
     id: "codex",
     name: "GPT",
     spec: model ? `codex:${model}` : "codex",
+    searches: true,
     async ask(prompt: string, opts: AskOptions = {}) {
       let { r, text } = await once(prompt, opts, model ?? codexWorkingModel);
       if (r.code !== 0 && !model && CHATGPT_UNSUPPORTED.test(r.stderr + r.stdout)) {
@@ -337,6 +342,27 @@ const agyBin = () => process.env.BATTLER_AGY || "agy";
 /** Gemini Pro through Antigravity CLI unless another model is asked for. */
 export const DEFAULT_AGY_MODEL = "gemini-3.1-pro-high";
 
+/**
+ * The best Gemini model in `agy models` output: Pro over Flash, the newest version, the highest
+ * effort. Antigravity's list changes as it updates itself (3.1 Pro was there, then gone), so the
+ * default is picked from what's on offer rather than fixed.
+ */
+export function bestAgyModel(list: string): string | null {
+  const ids = [...list.matchAll(/^(gemini-[\w.-]+)/gm)].map((m) => m[1]);
+  if (!ids.length) return null;
+  const tier = (id: string) => (/-pro\b/.test(id) ? 2 : /-flash(?!-lite)/.test(id) ? 1 : 0);
+  const version = (id: string) => Number(id.match(/gemini-(\d+(?:\.\d+)?)/)?.[1] ?? 0);
+  const effort = (id: string) => (/-high$/.test(id) ? 2 : /-medium$/.test(id) ? 1 : 0);
+  return [...ids].sort((a, b) => tier(b) - tier(a) || version(b) - version(a) || effort(b) - effort(a))[0];
+}
+
+/** `agy models`, asked once per run. */
+let agyModels: Promise<string> | undefined;
+const listAgyModels = () =>
+  (agyModels ??= run(agyBin(), ["models"], { timeoutMs: 45_000 }).then((r) =>
+    r.code === 0 ? r.stdout : Promise.reject(new Error(r.stderr.trim() || r.stdout.trim() || `agy models exited with ${r.code}`)),
+  ));
+
 /** Which CLI Gemini runs through: Antigravity CLI when it's installed, else the old Gemini CLI. */
 let geminiBackend: Promise<"agy" | "gemini"> | undefined;
 const pickGeminiBackend = () =>
@@ -345,7 +371,10 @@ const pickGeminiBackend = () =>
     () => "gemini",
   ));
 /** For tests: look for the CLIs again. */
-export const resetGeminiBackend = () => (geminiBackend = undefined);
+export const resetGeminiBackend = () => {
+  geminiBackend = undefined;
+  agyModels = undefined;
+};
 
 /**
  * Gemini through Antigravity CLI (`agy`), Google's successor to Gemini CLI, signed in with a Google
@@ -355,7 +384,8 @@ export const resetGeminiBackend = () => (geminiBackend = undefined);
 export function geminiAgent(model?: string): Agent {
   const viaAgy = {
     async ask(prompt: string, opts: AskOptions = {}) {
-      const args = ["-p", withSystem(prompt, opts.system), "--output-format", "json", "--disable-slash-commands", "--model", model ?? DEFAULT_AGY_MODEL];
+      const chosen = model ?? bestAgyModel(await listAgyModels().catch(() => "")) ?? DEFAULT_AGY_MODEL;
+      const args = ["-p", withSystem(prompt, opts.system), "--output-format", "json", "--disable-slash-commands", "--model", chosen];
       const r = await run(agyBin(), args, { signal: opts.signal });
       let json: { status?: string; response?: string; denied_actions?: { display_name?: string }[] };
       try {
@@ -371,10 +401,14 @@ export function geminiAgent(model?: string): Agent {
       throw new Error(`agy: ${explain("agy", r.stderr || json.status || "empty response")}`);
     },
     async check() {
-      const r = await run(agyBin(), ["models"], { timeoutMs: 45_000 }).catch((e: Error) => e);
-      if (r instanceof Error) return r.message;
-      if (r.code !== 0 || !/gemini/i.test(r.stdout)) return `not signed in; run \`agy\` once and sign in with your Google account`;
-      if (model && !r.stdout.includes(model)) return `the model ${model} isn't in Antigravity's list; see \`agy models\``;
+      agyModels = undefined; // look again on every check
+      const list = await listAgyModels().catch((e: Error) => e);
+      if (list instanceof Error) {
+        agyModels = undefined;
+        return /not found on PATH/.test(list.message) ? list.message : "not signed in; run `agy` once and sign in with your Google account";
+      }
+      if (!bestAgyModel(list)) return "Antigravity offers no Gemini model to this account; see `agy models`";
+      if (model && !list.includes(model)) return `the model ${model} isn't in Antigravity's list; see \`agy models\``;
       return null;
     },
   };

@@ -1,5 +1,5 @@
 import type { Agent, BattleEvent, BattleResult, Turn } from "./types.ts";
-import { DEBATER_SYSTEM, JUDGE_SYSTEM, debatePrompt, followUpBackground, judgePrompt, openingPrompt, type Position } from "./prompts.ts";
+import { DEBATER_SYSTEM, DEBATER_SYSTEM_WEB, JUDGE_SYSTEM, debatePrompt, followUpBackground, judgePrompt, openingPrompt, type Position } from "./prompts.ts";
 import { mergePanel, type JudgeVerdict } from "./panel.ts";
 import { isTransient, looksOffline, message } from "./errors.ts";
 import { attachmentsBlock, type Attachment } from "./links.ts";
@@ -34,6 +34,8 @@ export interface BattleOptions {
   retryDelayMs?: number;
   /** Shared conversations the question refers to, already fetched; every prompt includes them. */
   attachments?: Attachment[];
+  /** Debaters that can search the web do so (judges judge the transcript as it is). */
+  web?: boolean;
 }
 
 export interface FollowUp {
@@ -76,14 +78,16 @@ export async function runBattle(opts: BattleOptions): Promise<BattleResult> {
 
   /** Ask, and if it fails with a hiccup (not a used-up plan or a missing CLI), ask once more. */
   const ask = async (agent: Agent, prompt: string, system: string, round: number | "verdict") => {
+    const web = Boolean(opts.web && agent.searches && round !== "verdict");
+    const askOpts = { system: web ? DEBATER_SYSTEM_WEB : system, signal, ...(web ? { web } : {}) };
     try {
-      return await agent.ask(prompt, { system, signal });
+      return await agent.ask(prompt, askOpts);
     } catch (err) {
       if (!isTransient(err) || signal?.aborted) throw err;
       onEvent({ type: "retry", agentName: agent.name, round, error: message(err) });
       await sleep(retryDelayMs, signal);
       if (signal?.aborted) throw err;
-      return await agent.ask(prompt, { system, signal });
+      return await agent.ask(prompt, askOpts);
     }
   };
   const labels = opts.labels ?? new Map(shuffle(opts.agents).map((a, i) => [a.id, anonLabel(i)]));
@@ -165,6 +169,7 @@ export async function runBattle(opts: BattleOptions): Promise<BattleResult> {
       compare: true,
       ...(followUp ? { followUpOf: followUp.topic } : {}),
       ...(opts.attachments?.length ? { attachments: opts.attachments } : {}),
+      ...(opts.web ? { web: true } : {}),
     };
   }
 
@@ -234,5 +239,6 @@ export async function runBattle(opts: BattleOptions): Promise<BattleResult> {
     ...(followUp ? { followUpOf: followUp.topic } : {}),
     ...(opts.resume?.length ? { resumedFrom: opts.resume.length } : {}),
     ...(opts.attachments?.length ? { attachments: opts.attachments } : {}),
+    ...(opts.web ? { web: true } : {}),
   };
 }

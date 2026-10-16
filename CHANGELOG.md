@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.0 (2026-10-15)
+
+- **Search the web** (`-w` / **Search the web**): Claude (only its web search and page-reading tools) and GPT (Codex's web search, read-only sandbox) can look things up and cite sources. Grok and Gemini can't search through their CLIs, and the battle says so. Judges don't search.
+- **Fix: Gemini stopped working.** Antigravity CLI updated itself and dropped `gemini-3.1-pro-high`, the model battler asked for. battler now picks the best Gemini model Antigravity offers (Pro over Flash, newest first); the extension keeps the selected Gemini model if 3.1 Pro isn't in the menu.
+
 ## 0.2.0 (2026-10-06)
 
 New:

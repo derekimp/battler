@@ -43,6 +43,7 @@ export function renderHtmlReport(result: BattleResult, date = new Date()): strin
   const meta = [
     `${result.rounds.length} round${result.rounds.length === 1 ? "" : "s"}`,
     result.length,
+    ...(result.web ? ["web search on"] : []),
     judged,
     date.toISOString().slice(0, 16).replace("T", " "),
   ].join(" · ");

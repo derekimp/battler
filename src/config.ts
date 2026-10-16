@@ -13,6 +13,8 @@ export interface Config {
   out?: string;
   /** Open the HTML report in the browser after each battle. */
   open?: boolean;
+  /** Let debaters that can search the web do so (Claude and GPT). */
+  web?: boolean;
   /** Model per debater, passed straight to that CLI, e.g. { "grok": "grok-4.7-high" }. */
   models?: Partial<Record<"claude" | "codex" | "grok" | "gemini", string>>;
 }

@@ -52,7 +52,7 @@ const PLACEHOLDERS = [
 const state = {
   status: null,
   battles: [],
-  draft: { topic: "", selected: null, length: null, rounds: null, judge: null, judgeTouched: false, mode: "debate" },
+  draft: { topic: "", selected: null, length: null, rounds: null, judge: null, judgeTouched: false, mode: "debate", web: null },
   stream: null,
   timer: null,
 };
@@ -245,6 +245,10 @@ function renderNew() {
           ).join("")}
         </div>
       </div>
+      <label class="web-toggle">
+        <input type="checkbox" id="web" ${d.web ? "checked" : ""}>
+        <span><strong>Search the web</strong> <small class="muted">· for current facts, with sources. Claude and GPT search; Grok and Gemini answer from what they know. Slower.</small></span>
+      </label>
       <div id="rounds-row" class="rounds-row" ${d.mode === "compare" ? "hidden" : ""}>
         <div class="opt-label">Rounds <small>· including the opening</small></div>
         <div class="rounds-line">
@@ -314,6 +318,7 @@ function renderNew() {
     $("#start-label").textContent = d.mode === "compare" ? "Compare answers" : "Start battle";
     updateCost();
   });
+  $("#web").addEventListener("change", (e) => (d.web = e.target.checked));
   $("#lengths").addEventListener("click", (e) => {
     const b = e.target.closest("[data-length]");
     if (!b) return;
@@ -376,6 +381,7 @@ function renderNew() {
           agents: allUsable ? undefined : specs,
           judge: d.judge === "panel" ? "panel" : lead.via ? specs[0] : lead.id,
           compare: d.mode === "compare",
+          web: Boolean(d.web),
         },
       });
       d.topic = "";
@@ -451,7 +457,7 @@ function renderLive(jobId) {
         for (let r = e.firstRound; r <= e.totalRounds; r++) steps.push([`r${r}`, e.compare ? "Answers" : r === 1 ? "Opening" : `Round ${r}`]);
         if (!e.compare) steps.push(["verdict", "Verdict"]);
         view.innerHTML = `
-          ${headHtml({ topic: e.topic, followUpOf: e.followUpOf, debaters: e.debaters, attachments: e.attachments, meta: e.compare ? `${lengthName} · side by side, no judging` : `${lengthName} · ${e.totalRounds} round${e.totalRounds > 1 ? "s" : ""} · ${judged}` })}
+          ${headHtml({ topic: e.topic, followUpOf: e.followUpOf, debaters: e.debaters, attachments: e.attachments, meta: `${e.compare ? `${lengthName} · side by side, no judging` : `${lengthName} · ${e.totalRounds} round${e.totalRounds > 1 ? "s" : ""} · ${judged}`}${e.web ? " · web search on" : ""}` })}
           ${e.notes.length ? `<div class="notes">${e.notes.map((n) => `<p class="${/allowance|Skipping|isn't ready/.test(n) ? "warn" : ""}">${esc(n)}</p>`).join("")}</div>` : ""}
           <ol class="timeline" aria-label="Progress">${steps.map(([k, label], i) => `<li data-step="${k}"><span class="num">${i + 1}</span>${label}</li>`).join("")}</ol>
           <div id="verdict-slot"></div>
@@ -616,7 +622,9 @@ async function renderSaved(id) {
         <p class="muted">Its ${b.rounds} round${b.rounds === 1 ? " is" : "s are"} saved below. The judges can score them now.</p>
         <p style="margin-top:12px"><button class="btn primary" id="finish">Judge it now</button></p></section>`
     : `<div class="fade-in">${b.verdictHtml}</div>`;
-  const meta = b.compare
+  const meta = b.web
+    ? `${lengthName} · web search on${b.compare ? " · side by side, no judging" : ` · ${b.rounds} round${b.rounds > 1 ? "s" : ""}${b.incomplete ? "" : ` · ${judged}`}`} · ${timeAgo(b.createdAt)}`
+    : b.compare
     ? `${lengthName} · side by side, no judging · ${timeAgo(b.createdAt)}`
     : `${lengthName} · ${b.rounds} round${b.rounds > 1 ? "s" : ""}${b.incomplete ? "" : ` · ${judged}`} · ${timeAgo(b.createdAt)}`;
   view.innerHTML = `

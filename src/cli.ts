@@ -43,6 +43,8 @@ Options:
                         how detailed the verdict is               (default: medium)
   -s, -m, -L            Shorthands for --length short / medium / long
   -r, --rounds <n>      Rounds including the opening (1-5)       (default: 2)
+  -w, --web             Debaters that can search the web do (Claude, GPT): current facts,
+                        sources cited. Slower. Grok and Gemini answer from what they know
   -c, --compare         Just compare: each AI answers once, side by side; no debate or
                         judging. Quicker and uses 1 message per AI. Debate it later with
                         battler continue
@@ -98,6 +100,7 @@ async function main() {
       medium: { type: "boolean", short: "m" },
       long: { type: "boolean", short: "L" },
       compare: { type: "boolean", short: "c" },
+      web: { type: "boolean", short: "w" },
       json: { type: "boolean" },
       open: { type: "boolean" },
       out: { type: "string", short: "o" },
@@ -200,6 +203,7 @@ async function main() {
         config,
         judge: values.judge,
         ...(values.compare ? { compare: true } : {}),
+        ...(values.web ? { web: true } : {}),
       });
       chat = process.stdin.isTTY && process.stderr.isTTY && !values.json;
     } else {
@@ -226,6 +230,7 @@ async function main() {
         agents: values.agents?.split(",") ?? config.agents,
         judge: values.judge,
         compare: Boolean(values.compare),
+        ...(values.web ? { web: true } : {}),
         config,
       });
       chat = interactive && !values.json;

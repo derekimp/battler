@@ -125,6 +125,17 @@ battler continue --from battles/…-tabs-or-spaces.html "…"          # a speci
 - **After a comparison** (`-c`), `battler continue` has them debate those answers and judge, turning it into
   a full battle. A follow-up question to a comparison is compared too (add `-c` or not, it carries over).
 
+### Searching the web
+
+By default the AIs answer from what they know, with no tools at all. `battler -w "…"` (or **Search the web**
+in the web app) lets the debaters that can search do so, for current facts, and name their sources:
+
+- **Claude** gets exactly two tools, web search and reading a web page, and nothing else.
+- **GPT** uses Codex's own web search, still in its read-only sandbox.
+- **Grok** (Cursor's ask mode) and **Gemini** (Antigravity's headless mode) can't search through their CLIs
+  without wider permissions, so they answer from what they know; the battle says so up front.
+- The judges don't search: they judge the debate as written. Searching makes answers slower.
+
 ### Comparing instead of debating
 
 `battler -c "…"` (or **Just compare** in the web app) asks each AI once and shows the answers side by side:
@@ -153,6 +164,7 @@ Markdown (`.md`), and the battle itself (`.json`, used by `battler continue`).
 | `-j, --judge` | `panel` (short: one judge) | `panel`: every debater judges. Or one agent, same format as `--agents` |
 | `-l, --length` | `medium` | `short`, `medium` or `long` (shorthands `-s`, `-m`, `-L`) |
 | `-r, --rounds` | 2 | Rounds including the opening, 1-5 |
+| `-w, --web` | | Debaters that can search the web do (Claude, GPT); slower |
 | `-c, --compare` | | Just compare: one round, answers side by side, no judging |
 | `-o, --out` | `./battles` | Where battles are saved |
 | `--open` | | Open the web report afterwards |

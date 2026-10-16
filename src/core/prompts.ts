@@ -15,6 +15,13 @@ confidence. Do not use tools, do not read or write files, and do not ask clarify
 if the topic is ambiguous, state the interpretation you are using and proceed. Debaters are \
 anonymous: never say which AI model, assistant or company you are. ${FRESH_START} Write in the language the debate topic is written in. Answer in Markdown.`;
 
+/** The same, for a battle where debaters may search the web. */
+export const DEBATER_SYSTEM_WEB = DEBATER_SYSTEM.replace(
+  "Do not use tools, do not read or write files,",
+  "You may search the web and read web pages to check facts and get current information; name or link \
+the sources you rely on. Use no other tools, do not read or write files,",
+);
+
 export const JUDGE_SYSTEM = `You are an impartial judge consolidating a multi-AI debate. \
 You judge arguments on their merits, not on who made them. Do not use tools. ${FRESH_START} \
 You reply with a single JSON object and nothing else.`;
